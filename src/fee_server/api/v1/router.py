@@ -1,0 +1,8 @@
+"""Registro explícito de rutas de la API v1."""
+
+from fastapi import APIRouter
+
+from fee_server.api.v1.health import router as health_router
+
+api_router = APIRouter(prefix="/api/v1")
+api_router.include_router(health_router)
