@@ -1,10 +1,43 @@
+x-api-environment: &api-environment
+  FEE_ENVIRONMENT: development
+  FEE_DATABASE_URL: postgresql+psycopg://fee:fee-development-only@db:5432/fee
+  FEE_AUTH_SECRET_KEY: ${FEE_AUTH_SECRET_KEY:?Export FEE_AUTH_SECRET_KEY before starting Compose}
+
 services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: fee
+      POSTGRES_USER: fee
+      POSTGRES_PASSWORD: fee-development-only
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U fee -d fee]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build: .
+    environment: *api-environment
+    command: [alembic, upgrade, head]
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
   api:
     build: .
     ports:
       - "127.0.0.1:8000:8000"
-    environment:
-      FEE_ENVIRONMENT: development
+    environment: *api-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     volumes:
       - ./src:/app/src:ro
     command:
@@ -16,13 +49,14 @@ services:
       - --port
       - "8000"
       - --no-access-log
+      - --no-proxy-headers
       - --reload
       - --reload-dir
       - /app/src
     read_only: true
-    tmpfs:
-      - /tmp
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+volumes:
+  postgres_data:

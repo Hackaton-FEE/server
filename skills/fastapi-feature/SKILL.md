@@ -9,7 +9,7 @@ Lee [arquitectura](../../docs/architecture.md) y [producto y datos](../../rules/
 
 Conserva la app factory y crea instancias independientes en pruebas. Mantén configuración, rutas y modelos según la estructura existente; no añadas base de datos, colas o servicios externos para ampliar el scaffold por iniciativa propia.
 
-La API inicial solo expone salud. Si una tarea añade comportamiento, especifica entrada, respuesta, errores y límites de responsabilidad. Ningún éxito HTTP de envío demuestra que un tercero eliminó contenido.
+La API expone salud, autenticación con sesiones SQL y un catálogo de proveedores. Los features viven en `src/fee_server/modules/`; consulta el contrato vigente en `docs/api-contract.md`. Si una tarea añade comportamiento, especifica entrada, respuesta, errores y límites de responsabilidad. Ningún éxito HTTP de envío demuestra que un tercero eliminó contenido.
 
 Mantén URL y datos personales fuera de logs, excepciones y ejemplos. La inicialización y las pruebas no deben enviar solicitudes reales a plataformas externas.
 

@@ -15,6 +15,20 @@ jobs:
   checks:
     name: Server checks
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: fee_tests
+          POSTGRES_USER: fee_test
+          POSTGRES_PASSWORD: fixture-only-postgres-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fee_test -d fee_tests"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,4 +47,6 @@ jobs:
       - name: Check formatting
         run: uv run --frozen ruff format --check .
       - name: Test API and configuration
+        env:
+          FEE_TEST_POSTGRES_URL: postgresql+psycopg://fee_test:fixture-only-postgres-password@127.0.0.1:5432/fee_tests
         run: uv run --frozen pytest

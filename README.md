@@ -1,12 +1,10 @@
 # FEE Server
 
-Base del servidor de la plataforma FEE, separada de la [app Flutter](https://github.com/Hackaton-FEE/app). El [concepto del producto](https://github.com/Hackaton-FEE/documentation/blob/main/concepto-central-plataforma.md) vive en el repositorio de documentación.
-
-Esta versión arranca una API FastAPI con una comprobación de vida. No guarda casos, URLs, imágenes ni datos personales; no envía solicitudes a plataformas externas. PostgreSQL, Redis, autenticación, autorización e integraciones de retiro siguen pendientes.
+API FastAPI de FEE en Python 3.12. Incluye cuentas, autenticación por contraseña, sesiones persistentes y una base modular para los distintos tipos de escaneo. La [app Flutter](https://github.com/Hackaton-FEE/app) sigue usando su demo local; este cambio prepara el contrato del servidor.
 
 ## Arranque local
 
-Requisitos: Python 3.12 y uv 0.12.12. Desde la raíz del repositorio, si aún no tienes uv, puedes instalarlo en un entorno aislado:
+Requisitos: Python 3.12 y uv 0.12.12. Si necesitas instalar uv de forma aislada:
 
 ```bash
 python3.12 -m venv .tooling
@@ -14,56 +12,73 @@ python3.12 -m venv .tooling
 export PATH="$PWD/.tooling/bin:$PATH"
 ```
 
-Instala las dependencias y arranca el servidor:
-
 ```bash
 uv sync --frozen
-uv run --frozen uvicorn fee_server.main:create_app --factory --host 127.0.0.1 --port 8000 --reload --no-access-log
+export FEE_AUTH_SECRET_KEY="$(python3.12 -c 'import secrets; print(secrets.token_urlsafe(48))')"
+uv run --frozen alembic upgrade head
+uv run --frozen uvicorn fee_server.main:create_app --factory --host 127.0.0.1 --port 8000 --reload --no-access-log --no-proxy-headers
 ```
 
-En otra terminal:
+SQLite usa `fee.db`, ignorado por Git. Las migraciones se ejecutan explícitamente; crear la app no conecta la base de datos ni modifica su esquema. Conserva la clave generada en tu gestor de secretos y reutilízala al reiniciar. Sin clave explícita, desarrollo genera una por factory: los access tokens dejan de validar después de reiniciar y los límites por IP no se comparten entre workers.
 
-```bash
-curl --fail http://127.0.0.1:8000/api/v1/health
-```
+En desarrollo: [Swagger](http://127.0.0.1:8000/docs) y [OpenAPI](http://127.0.0.1:8000/openapi.json). `GET /api/v1/health` conserva su respuesta `{"status":"ok","service":"fee-server","version":"0.1.0"}` y solo comprueba que el proceso responde.
 
-Respuesta HTTP 200:
+## Autenticación
 
-```json
-{"status":"ok","service":"fee-server","version":"0.1.0"}
-```
+| Método | Ruta | Resultado |
+| --- | --- | --- |
+| POST | `/api/v1/auth/register` | Crea una cuenta con correo y contraseña. |
+| POST | `/api/v1/auth/login` | Emite access JWT y refresh token opaco. |
+| POST | `/api/v1/auth/refresh` | Rota el refresh y emite un nuevo par. |
+| GET | `/api/v1/auth/me` | Devuelve la cuenta autenticada. |
+| GET | `/api/v1/auth/sessions` | Lista las sesiones activas propias. |
+| DELETE | `/api/v1/auth/sessions/{session_id}` | Revoca una sesión propia. |
+| POST | `/api/v1/auth/logout` | Revoca la sesión actual. |
+| POST | `/api/v1/auth/change-password` | Cambia la contraseña y revoca todas las sesiones. |
+| GET | `/api/v1/scans/capabilities` | Catálogo autenticado de proveedores y disponibilidad. |
 
-Este endpoint verifica que el proceso responde; no indica la disponibilidad de una base de datos ni de servicios externos. En desarrollo hay documentación interactiva en [localhost:8000/docs](http://127.0.0.1:8000/docs) y el esquema en [localhost:8000/openapi.json](http://127.0.0.1:8000/openapi.json). Solo está implementada la ruta de salud; por ejemplo, `/api/v1/cases` responde 404.
+La contraseña usa Argon2id. Los JWT contienen identificadores internos, emisor, audiencia y expiración; cada petición protegida verifica también el estado de la sesión en SQL. Los refresh se guardan únicamente como hash, caducan con la sesión y son de un solo uso. Reutilizar uno revoca la sesión completa, incluido el reemplazo. El cliente debe serializar las renovaciones y guardar el nuevo par de forma atómica.
+
+Consulta [el contrato HTTP](docs/api-contract.md), [la arquitectura](docs/architecture.md) y [cómo añadir un proveedor](docs/scanning.md). No hay rutas de ejecución de escaneos todavía: Sherlock, Holehe, Maigret y HIBP aparecen como no disponibles hasta conectar sus adaptadores y su flujo de autorización. No se presentan resultados ficticios como escaneos reales.
 
 ## Configuración
 
-`FEE_ENVIRONMENT` acepta `development` (valor por defecto), `test` y `production`. Un valor desconocido impide el arranque. En `production`, `/docs` y `/openapi.json` están deshabilitados. Cambiar esta variable no configura una infraestructura de producción.
+[.env.example](.env.example) contiene todas las variables. Se leen variables de entorno; los archivos `.env` no se cargan automáticamente. `FEE_ENVIRONMENT` acepta `development`, `test` y `production`.
+
+- Producción exige `FEE_DATABASE_URL` con `postgresql+psycopg://…` y `FEE_AUTH_SECRET_KEY` explícita, aleatoria y de al menos 32 bytes. Usa la misma clave en todos los workers.
+- Access tokens: 15 minutos por defecto. Sesiones y refresh: 30 días de duración absoluta.
+- Cinco intentos fallidos bloquean temporalmente el acceso a una cuenta durante cinco minutos. El error de login no distingue cuenta ausente, contraseña incorrecta, bloqueo o cuenta inactiva.
+- Registro, login y refresh tienen además un límite SQL de 30 solicitudes por IP/ruta/minuto. Devuelve `429` y `Retry-After`; las IP se almacenan como HMAC temporal, sin texto original.
+- Las solicitudes tienen un máximo de 16 KiB. Los errores de validación excluyen valores de entrada y los errores SQL no exponen consultas.
+- CORS está cerrado por defecto. Para Flutter web configura `FEE_CORS_ORIGINS` como una lista JSON de orígenes exactos; en producción solo HTTPS. La app móvil nativa no necesita CORS.
+- En producción se ocultan Swagger/OpenAPI. TLS y la confianza en cabeceras del proxy se configuran en la infraestructura. Los arranques incluidos deshabilitan proxy headers. Al desplegar, habilita cabeceras reenviadas solo desde proxies conocidos que eliminen los valores enviados por el cliente: el limitador usa la IP que Uvicorn entrega a la app.
+
+Desactiva los logs de acceso como en los comandos anteriores. No registres cuerpos, contraseñas, tokens, correos ni objetivos de escaneo. Este backend aún no incluye verificación de correo, recuperación de contraseña por correo, MFA ni inicio de sesión social.
+
+## Docker con PostgreSQL
 
 ```bash
-export FEE_ENVIRONMENT=development
-```
-
-`.env.example` documenta las variables. Los archivos `.env` no se cargan automáticamente ni se versionan. No agregues credenciales al código, a las pruebas ni a las instrucciones para IA. Los comandos de arranque desactivan el registro de accesos de Uvicorn para evitar almacenar URLs y parámetros de consulta.
-
-## Docker para desarrollo
-
-Con Docker Engine y el plugin Compose disponibles:
-
-```bash
+export FEE_AUTH_SECRET_KEY="$(python3.12 -c 'import secrets; print(secrets.token_urlsafe(48))')"
 docker compose up --build
 ```
 
-El contenedor ejecuta Uvicorn con UID/GID 10001, sin privilegios de root. Compose publica el puerto únicamente en `127.0.0.1:8000` y monta `src/` en modo lectura para recargar los cambios. Dentro del contenedor Uvicorn escucha en `0.0.0.0` para recibir el tráfico del puerto publicado. No se incluyen bases de datos ni otros servicios.
+Compose arranca PostgreSQL, espera su healthcheck, ejecuta las migraciones y arranca la API en [localhost:8000](http://127.0.0.1:8000/docs). La API y las migraciones corren sin root, con filesystem de solo lectura. PostgreSQL conserva sus datos en un volumen y no publica un puerto al host. La contraseña fija de la base en Compose es exclusivamente de desarrollo; este archivo no es una configuración de producción.
 
 ```bash
 docker compose down
 ```
 
-La imagen es una base de desarrollo; la elección de hosting, TLS, autenticación, observabilidad y secretos se hará antes de un despliegue. `uv.lock` fija las dependencias Python; la imagen base `python:3.12-slim` recibe actualizaciones del sistema y no está fijada por digest.
+`down` conserva el volumen. Las imágenes base usan tags de versión y no están fijadas por digest.
+
+## Mantenimiento de sesiones
+
+```bash
+uv run --frozen python -m fee_server.maintenance cleanup-auth
+```
+
+Ejecuta esta operación como tarea de mantenimiento de tu infraestructura. Elimina sesiones cuya duración absoluta ya venció, sus tokens mediante cascada SQL y contadores de IP expirados. Conserva cuentas y todas las sesiones aún vigentes, incluso las revocadas, junto con su historial de refresh. Solo imprime cantidades agregadas. No se instala ningún scheduler automáticamente.
 
 ## Validación
-
-Los mismos comandos se ejecutan en GitHub Actions, en el job `Server checks`:
 
 ```bash
 uv lock --check
@@ -73,30 +88,25 @@ uv run --frozen ruff format --check .
 uv run --frozen pytest
 ```
 
-Las pruebas verifican el contrato JSON de salud, el método HTTP permitido, la ausencia de rutas de casos, la documentación OpenAPI y el comportamiento de configuración. Los cambios de dependencias deben actualizar `pyproject.toml` y `uv.lock` juntos; ejecuta `uv lock` y vuelve a correr la validación. Los arranques y la CI usan `--frozen` para conservar las versiones del lock.
+Las pruebas cubren contrato, configuración, credenciales, expiración y revocación de sesiones, refresh concurrente, aislamiento entre usuarios, límites HTTP y orquestación de proveedores mediante dobles locales. Las migraciones se validan separadamente del `create_all` de las fixtures. La CI usa dependencias congeladas en `uv.lock` y un servicio PostgreSQL 17 para ejecutar también migraciones y concurrencia contra SQL real.
+
+Para ejecutar las tres pruebas PostgreSQL localmente, exporta `FEE_TEST_POSTGRES_URL` con una URL `postgresql+psycopg://…` hacia una base de pruebas. El usuario necesita crear esquemas. Las pruebas crean un esquema aleatorio y eliminan únicamente ese esquema al terminar; no migran esquemas existentes. Sin esa variable, las tres pruebas se omiten explícitamente.
 
 ## Estructura
 
 ```text
 src/fee_server/
-  main.py                # Fábrica ASGI create_app
-  core/config.py         # Configuración validada
-  api/v1/router.py        # Registro de rutas versionadas
-  api/v1/health.py        # Único endpoint inicial
-tests/                   # Contrato HTTP y configuración
-rules/                   # Reglas del equipo y de IA
-skills/                  # Procedimientos de trabajo con IA
-docs/                    # Arquitectura y decisiones
+  main.py                 # Factory y composición de dependencias
+  api/v1/                 # Montaje de rutas versionadas y salud
+  core/                   # Configuración, SQL, límites y errores HTTP
+  modules/
+    auth/                 # Modelos SQL, esquemas, tokens, servicio y rutas
+    scans/                # Contratos, registro, orquestación y catálogo
+migrations/               # Historial Alembic
+tests/                    # Contratos y comportamiento (incluye auth/ y scans/)
+docs/                     # Arquitectura, API y extensión de escaneos
+rules/                    # Reglas del equipo
+skills/                   # Procedimientos de IA
 ```
 
-Lee [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md) y las carpetas `rules/` y `skills/` antes de implementar una funcionalidad. La arquitectura y el flujo de revisión describen cómo repartir el trabajo entre los dos ingenieros.
-
-## Siguiente alcance
-
-- Acordar el contrato de casos con la app y la documentación, antes de añadir persistencia.
-- Diseñar autenticación, autorización por caso y minimización de datos antes de recibir información de personas.
-- Elegir PostgreSQL, migraciones y política de retención cuando se implemente persistencia.
-- Evaluar Redis y trabajos asíncronos cuando exista un proceso que los necesite.
-- Validar cada integración externa y el consentimiento requerido antes de habilitar envíos.
-
-Referencias de implementación: [pruebas con FastAPI](https://fastapi.tiangolo.com/tutorial/testing/) y [FastAPI en contenedores](https://fastapi.tiangolo.com/deployment/docker/).
+Lee [AGENTS.md](AGENTS.md) y [CONTRIBUTING.md](CONTRIBUTING.md) antes de contribuir. Los cambios se revisan mediante PR; no se integra automáticamente a `main`.

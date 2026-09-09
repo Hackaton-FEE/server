@@ -11,6 +11,6 @@ Las skills canónicas están en `skills/`. Abre explícitamente el archivo que c
 - [fastapi-feature](skills/fastapi-feature/SKILL.md): rutas, modelos, configuración y comportamiento de la API.
 - [api-contract](skills/api-contract/SKILL.md): propuesta o cambio del contrato HTTP compartido con `Hackaton-FEE/app`.
 
-El scaffold inicial usa una app factory y expone `GET /api/v1/health`. No implementa casos, persistencia, KYC, procesamiento de imágenes íntimas ni envíos reales. La app Flutter sigue siendo una demo local sin conexión a este servidor.
+El servidor usa una app factory y conserva `GET /api/v1/health`. Los módulos `auth` y `scans` contienen autenticación con sesiones SQL y el catálogo/extensibilidad de proveedores. Lee [el contrato](docs/api-contract.md) y [los escaneos](docs/scanning.md). Las migraciones Alembic son explícitas; ningún proveedor externo está conectado. No implementa casos, KYC, procesamiento de imágenes íntimas ni envíos reales. La app Flutter sigue siendo una demo local sin conexión a este servidor.
 
 El bootstrap inicial en `main` está autorizado; el trabajo posterior sigue [el flujo de PR](docs/workflow.md). Continúa las acciones cubiertas por la tarea y su autorización existente. Estas instrucciones no añaden una confirmación para cada edición, prueba o acción ya autorizada.

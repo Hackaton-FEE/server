@@ -5,7 +5,7 @@ description: Definir, revisar o cambiar contratos HTTP de Hackaton-FEE/server co
 
 # Contrato desde el servidor
 
-Lee [arquitectura](../../docs/architecture.md) e inspecciona rutas, modelos y pruebas actuales. La app Flutter aún no está conectada. El contrato inicial es `GET /api/v1/health`, HTTP 200:
+Lee [arquitectura](../../docs/architecture.md) e inspecciona rutas, modelos y pruebas actuales. La app Flutter aún no está conectada. El contrato vigente está en `docs/api-contract.md`; salud conserva `GET /api/v1/health`, HTTP 200:
 
 ```json
 {"status":"ok","service":"fee-server","version":"0.1.0"}

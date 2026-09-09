@@ -13,6 +13,9 @@ dist/
 .env.*
 !.env.example
 *.log
+*.db
+*.db-*
+*.sqlite*
 .DS_Store
 .idea/
 .vscode/

@@ -1,14 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from fee_server.core.config import Settings
 from fee_server.main import create_app
-
-
-@pytest.fixture
-def client():
-    with TestClient(create_app(Settings(environment="test"))) as test_client:
-        yield test_client
 
 
 def test_health_contract(client):
@@ -41,7 +34,18 @@ def test_openapi_describes_the_available_contract(client):
     assert response.status_code == 200
     schema = response.json()
     assert schema["info"]["version"] == "0.1.0"
-    assert set(schema["paths"]) == {"/api/v1/health"}
+    assert set(schema["paths"]) == {
+        "/api/v1/health",
+        "/api/v1/auth/register",
+        "/api/v1/auth/login",
+        "/api/v1/auth/refresh",
+        "/api/v1/auth/logout",
+        "/api/v1/auth/me",
+        "/api/v1/auth/sessions",
+        "/api/v1/auth/sessions/{session_id}",
+        "/api/v1/auth/change-password",
+        "/api/v1/scans/capabilities",
+    }
     success = schema["paths"]["/api/v1/health"]["get"]["responses"]["200"]
     assert success["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/HealthResponse"
@@ -50,6 +54,10 @@ def test_openapi_describes_the_available_contract(client):
 
 def test_production_hides_docs_and_preserves_health(monkeypatch):
     monkeypatch.setenv("FEE_ENVIRONMENT", "production")
+    monkeypatch.setenv(
+        "FEE_AUTH_SECRET_KEY", "production-test-only-0123456789-abcdefghijklmnopqrstuvwxyz"
+    )
+    monkeypatch.setenv("FEE_DATABASE_URL", "postgresql+psycopg://unused:unused@localhost/unused")
 
     with TestClient(create_app()) as client:
         assert client.get("/docs").status_code == 404

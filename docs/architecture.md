@@ -1,30 +1,48 @@
 # Arquitectura del servidor
 
-`Hackaton-FEE/server` contiene una API FastAPI sobre Python 3.12, con dependencias declaradas en `pyproject.toml` y resueltas en `uv.lock`. La aplicación se construye mediante una factory para aislar configuración, montaje de rutas y creación de instancias en pruebas.
+FEE usa un monolito modular FastAPI/Python 3.12. Cada feature conserva juntos sus contratos y reglas. Esto permite añadir proveedores de escaneo sin introducir nuevas responsabilidades en autenticación ni repartir prematuramente el proyecto en microservicios.
 
-La factory es `src/fee_server/main.py:create_app`. Las pruebas de comportamiento HTTP y configuración viven en `tests/test_api.py` y `tests/test_config.py`. El entorno usa uv 0.12.12; los comandos reproducibles están en [CONTRIBUTING.md](../CONTRIBUTING.md).
+## Composición
 
-## Contrato actual
+`main.create_app(settings)` crea configuración, conexiones diferidas, servicio de tokens, limitador y registro de proveedores por instancia. No conecta a SQL, crea tablas ni llama a terceros durante la construcción. El lifespan libera el engine al cerrar. Alembic es el único mecanismo de evolución del esquema en ejecución normal.
 
-| Método y ruta | Respuesta |
-| --- | --- |
-| `GET /api/v1/health` | HTTP 200, `{"status":"ok","service":"fee-server","version":"0.1.0"}`. |
+`api/v1/router.py` registra explícitamente salud, auth y scans. `core/` contiene solo infraestructura compartida: configuración validada, sesiones SQL, errores HTTP sin datos de entrada, límite de cuerpo y limitador persistente de auth.
 
-El endpoint confirma que la aplicación responde. No acredita disponibilidad de Google/Meta, estado de casos, persistencia ni capacidad de retiro. Los endpoints interactivos de documentación se desactivan cuando `FEE_ENVIRONMENT` está configurado como `production`.
+`modules/auth/` agrupa cuentas y sesiones del mismo producto. El router traduce HTTP; schemas valida entradas/salidas; security implementa primitivas con pwdlib y PyJWT; service ejecuta transacciones sobre modelos SQLAlchemy. No existe una capa repositorio adicional que repita llamadas SQL sin aportar un contrato. Si se añade otra persistencia, se extraerá una interfaz desde los casos de uso concretos.
 
-El scaffold no incorpora base de datos, autenticación de usuarios, colas, captura de evidencia ni envíos externos. El cliente del repositorio `Hackaton-FEE/app` conserva borradores en memoria y todavía no consume esta API.
+`modules/scans/` tiene contratos de resultados, proveedores asíncronos, registro y orquestador independiente de HTTP. Su única ruta actual es un catálogo protegido. Lee [scanning.md](scanning.md) para registrar adaptadores y los requisitos previos a habilitar ejecución.
 
-## Límites de responsabilidad
+## Dependencias entre features
 
-La factory compone configuración y rutas sin ejecutar trabajo externo. Los routers declaran HTTP y los modelos expresan respuestas. Conserva lógica de negocio fuera del transporte cuando una nueva tarea realmente la requiera; no hay necesidad de crear capas vacías de antemano.
+Scans importa únicamente `auth.dependencies.CurrentActor` para su límite HTTP. El orquestador y los proveedores no conocen contraseñas, JWT, tablas de usuarios ni FastAPI. Futuras rutas de jobs deben derivar el propietario del actor autenticado y consultar siempre por `(job_id, owner_id)`, nunca aceptar un propietario arbitrario desde el payload.
 
-El servidor y sus pruebas no deben registrar URL de casos ni información personal. Cualquier contrato futuro debe distinguir preparado, enviado, recibido, retiro en origen y desindexación. Un hash no demuestra conocimiento cero ni transforma una captura en certificación.
+Los futuros workers reciben identificadores de trabajos autorizados y resultados normalizados. Las colas, almacenamiento de hallazgos y adaptadores externos se añadirán con un caso de uso implementado, política de retención y contrato comprobado. No hay carpetas vacías para servicios hipotéticos.
 
-## Roadmap, fuera de la entrega inicial
+## Datos y seguridad implementada
 
-1. Acordar y probar desde Flutter la integración de salud de solo lectura.
-2. Definir contrato de borradores y estados, persistencia y responsabilidad sobre datos antes de introducirlos.
-3. Implementar un primer canal asistido con resultados verificables, en una tarea separada.
-4. Evaluar KYC, imágenes íntimas, preservación de evidencia, terceros y escalamiento automático con sus propios requisitos.
+- SQL conserva UUID, correo normalizado, hash Argon2id y estado/bloqueo de la cuenta.
+- Cada sesión conserva propietario, creación, última renovación, expiración absoluta y revocación. Los refresh guardan SHA-256 y su consumo; el valor utilizable solo se entrega al cliente.
+- JWT HS256 de corta duración exige `sub`, `sid`, `jti`, `iss`, `aud`, `iat`, `exp` y `type=access`. No contiene correo ni datos de escaneo. La autorización comprueba cuenta activa y sesión vigente en cada petición.
+- El refresh usa una actualización condicional para que solo una petición pueda consumirlo. Consumo y reemplazo forman una transacción. Un replay persiste la revocación de toda la sesión antes de responder con error.
+- Login y cambio de contraseña verifican mediante escritura condicional que la credencial no cambió durante el hash. El cambio de contraseña revoca todas las sesiones en la misma transacción.
+- Los contadores por cuenta y por IP/ruta se actualizan en SQL; no dependen de memoria del worker. Las entradas de IP son HMAC y caducan al cerrar su ventana; se eliminan durante solicitudes posteriores.
 
-La visión del documento conceptual no implica que esas integraciones existan ni que una petición garantice eliminación de contenido.
+Los correos de cuentas se conservan mientras exista la cuenta; esta entrega no incluye un flujo público de borrado. Los hashes de refresh consumidos deben conservarse hasta la expiración de su sesión para detectar replay. El comando `python -m fee_server.maintenance cleanup-auth` elimina sesiones vencidas y sus tokens en una transacción; su periodicidad corresponde al despliegue. No se persisten objetivos ni resultados de escaneo. No se transfieren datos a proveedores externos desde los endpoints actuales. Un hash no implica conocimiento cero ni certificación.
+
+## Persistencia y entornos
+
+SQLite simplifica desarrollo y pruebas locales. PostgreSQL con psycopg es obligatorio en configuración de producción y viene en Compose para probar la misma familia SQL. Las pruebas usan bases aisladas; ningún test depende de proveedores OSINT. Las migraciones pertenecen al repositorio y no se ejecutan automáticamente desde cada worker.
+
+Una clave efímera por factory se permite solo en desarrollo/test. Para persistir access tokens entre reinicios y compartir límites entre workers configura una clave estable. Producción rechaza ausencia de clave y SQLite. TLS, secretos gestionados, backups y despliegue siguen siendo configuración de infraestructura.
+
+## Origen de la adaptación
+
+Se revisó [ICI-Laboratories/auth_services](https://github.com/ICI-Laboratories/auth_services) en commit `aabb6e30bddf59a5aba3d64a9ca4a37be1ea2d26`. La implementación para FEE adapta los patrones de `backend/app/core/security.py`, `backend/app/session_tokens.py`, `backend/app/domains/auth/` y `backend/app/domains/sessions/`: separación por features, Argon2id, refresh opaco, rotación, revocación y ownership.
+
+La referencia no incluía un archivo de licencia en la revisión inspeccionada; se escribió una adaptación específica sin importar su código completo. No se trasladaron RBAC institucional, organizaciones, Google/Firebase, federación, auditorías con correos ni compatibilidad con JWT legacy sin claims obligatorios.
+
+Como referencias de librerías se usaron [seguridad JWT de FastAPI](https://fastapi.tiangolo.com/tutorial/security/oauth2-jwt/) y [SQLAlchemy para SQLite](https://docs.sqlalchemy.org/en/20/dialects/sqlite.html).
+
+## Límites del producto
+
+`GET /api/v1/health` conserva el contrato original y no acredita disponibilidad de SQL. La app Flutter aún no consume esta API. No existen rutas de casos, KYC, recepción de imágenes íntimas, preservación de evidencia, reportes externos ni solicitudes de retiro. Preparación, envío, recepción, retiro en origen y desindexación siguen siendo estados diferentes a definir cuando se implementen esos módulos.
