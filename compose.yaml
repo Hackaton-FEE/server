@@ -1,10 +1,25 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: fee
+      POSTGRES_PASSWORD: fee
+      POSTGRES_DB: fee
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - fee-db-data:/var/lib/postgresql/data
+
   api:
     build: .
+    depends_on:
+      - db
     ports:
       - "127.0.0.1:8000:8000"
     environment:
       FEE_ENVIRONMENT: development
+      FEE_DATABASE_URL: postgresql+psycopg://fee:fee@db:5432/fee
+      FEE_JWT_SECRET: dev-insecure-secret-change-me-000000000000
     volumes:
       - ./src:/app/src:ro
     command:
@@ -26,3 +41,6 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+
+volumes:
+  fee-db-data:

@@ -8,11 +8,27 @@ La factory es `src/fee_server/main.py:create_app`. Las pruebas de comportamiento
 
 | Método y ruta | Respuesta |
 | --- | --- |
-| `GET /api/v1/health` | HTTP 200, `{"status":"ok","service":"fee-server","version":"0.1.0"}`. |
+| `GET /api/v1/health` | HTTP 200, `{"status":"ok","service":"fee-server","version":"0.2.0"}`. |
+| `POST /api/v1/auth/passkey/registration/options` | HTTP 200, reto para crear una passkey. |
+| `POST /api/v1/auth/passkey/registration/verify` | HTTP 201, sesión nueva (crea la cuenta). |
+| `POST /api/v1/auth/passkey/authentication/options` | HTTP 200, reto para iniciar sesión. |
+| `POST /api/v1/auth/passkey/authentication/verify` | HTTP 200, sesión nueva. |
+| `POST /api/v1/auth/token/refresh` | HTTP 200, sesión rotada. |
+| `POST /api/v1/auth/logout` | HTTP 204. |
+| `GET /api/v1/auth/me` | HTTP 200, resumen de la cuenta (requiere `Authorization: Bearer`). |
+| `GET /.well-known/assetlinks.json` · `GET /.well-known/apple-app-site-association` | HTTP 200, asociación de dominio para passkeys nativas. |
 
-El endpoint confirma que la aplicación responde. No acredita disponibilidad de Google/Meta, estado de casos, persistencia ni capacidad de retiro. Los endpoints interactivos de documentación se desactivan cuando `FEE_ENVIRONMENT` está configurado como `production`.
+El contrato completo de autenticación, con ejemplos y notas para el cliente Flutter, está en [auth-contract.md](auth-contract.md).
 
-El scaffold no incorpora base de datos, autenticación de usuarios, colas, captura de evidencia ni envíos externos. El cliente del repositorio `Hackaton-FEE/app` conserva borradores en memoria y todavía no consume esta API.
+`GET /api/v1/health` confirma que la aplicación responde. No acredita disponibilidad de Google/Meta, estado de casos, captura de evidencia ni capacidad de retiro. Los endpoints interactivos de documentación se desactivan cuando `FEE_ENVIRONMENT` está configurado como `production`.
+
+## Autenticación
+
+El registro y el inicio de sesión usan **passkeys FIDO2/WebAuthn** nativas del sistema operativo: no hay nombre de usuario, correo ni contraseña. El servidor guarda solo un identificador aleatorio (`handle`) y una o varias llaves públicas por cuenta; los datos biométricos nunca salen del dispositivo. La sesión es un JWT de acceso corto más un refresh token opaco que se rota en cada uso.
+
+La persistencia es SQLAlchemy sobre SQLite en local y PostgreSQL/Supabase en despliegue; el esquema lo gestiona Alembic (`migrations/`). Crear la app (`create_app`) prepara el engine pero no abre conexiones ni ejecuta trabajo externo.
+
+El scaffold sigue sin colas, captura de evidencia ni envíos externos. El cliente `Hackaton-FEE/app` (Flutter) todavía no consume esta API.
 
 ## Límites de responsabilidad
 

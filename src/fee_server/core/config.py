@@ -2,7 +2,14 @@
 
 from typing import Literal
 
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Valor obvio e inseguro: sirve para desarrollo local sin configurar nada.
+# Un validador impide arrancar con este valor en producción.
+DEV_INSECURE_JWT_SECRET = "dev-insecure-secret-change-me-000000000000"
+
+MIN_JWT_SECRET_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -10,6 +17,49 @@ class Settings(BaseSettings):
 
     environment: Literal["development", "test", "production"] = "development"
 
+    # --- Base de datos ---
+    # SQLAlchemy URL. Por defecto SQLite local; en producción, Postgres/Supabase.
+    database_url: str = "sqlite:///./dev.db"
+
+    # --- Sesión: JWT de acceso + refresh token opaco ---
+    jwt_secret: str = DEV_INSECURE_JWT_SECRET
+    jwt_issuer: str = "fee-server"
+    jwt_audience: str = "fee-app"
+    access_token_ttl_seconds: int = 3600  # 1 hora
+    refresh_token_ttl_seconds: int = 2_592_000  # 30 días
+
+    # --- WebAuthn / passkeys ---
+    webauthn_rp_id: str = "localhost"
+    webauthn_rp_name: str = "FEE"
+    # Allowlist EXACTA de orígenes aceptados. iOS: "https://<rp_id>".
+    # Android: "android:apk-key-hash:<base64url-sha256-del-certificado>".
+    webauthn_origins: tuple[str, ...] = ("http://localhost",)
+    challenge_ttl_seconds: int = 120
+
+    # --- Archivos de asociación de dominio (valores del equipo Flutter) ---
+    android_package_name: str = ""
+    android_sha256_fingerprints: tuple[str, ...] = ()
+    ios_app_ids: tuple[str, ...] = ()  # "<TeamID>.<BundleID>"
+
+    # --- Transporte ---
+    cors_origins: tuple[str, ...] = ()
+    max_request_body_bytes: int = 16_384
+
     @property
     def docs_enabled(self) -> bool:
         return self.environment != "production"
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def _secret_long_enough(cls, value: str) -> str:
+        if len(value) < MIN_JWT_SECRET_LENGTH:
+            raise ValueError(
+                f"FEE_JWT_SECRET debe tener al menos {MIN_JWT_SECRET_LENGTH} caracteres"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _production_needs_real_secret(self) -> "Settings":
+        if self.environment == "production" and self.jwt_secret == DEV_INSECURE_JWT_SECRET:
+            raise ValueError("Define FEE_JWT_SECRET con un valor propio en producción")
+        return self

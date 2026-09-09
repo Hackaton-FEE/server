@@ -8,13 +8,21 @@ dependencies = [
     "fastapi>=0.115,<1.0",
     "pydantic-settings>=2.7,<3.0",
     "uvicorn>=0.34,<1.0",
+    "sqlalchemy>=2.0,<3.0",
+    "alembic>=1.14,<2.0",
+    "webauthn>=2.2,<3.0",
+    "pyjwt>=2.10,<3.0",
+    "slowapi>=0.1.9,<1.0",
+    "psycopg[binary]>=3.2,<4.0",
 ]
 
 [dependency-groups]
 dev = [
     "httpx>=0.28,<1.0",
     "pytest>=8.3,<10.0",
+    "pytest-cov>=6.0,<8.0",
     "ruff>=0.9,<1.0",
+    "soft-webauthn>=0.1.4,<1.0",
 ]
 
 [build-system]
@@ -26,7 +34,11 @@ packages = ["src/fee_server"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+addopts = "-ra --cov=fee_server --cov-report=term-missing --cov-fail-under=80"
+
+[tool.coverage.run]
+source = ["src/fee_server"]
+omit = ["src/fee_server/__main__.py"]
 
 [tool.ruff]
 target-version = "py312"
