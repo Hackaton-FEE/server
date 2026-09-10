@@ -26,6 +26,7 @@ from fee_server.domain.osint.schemas import (
     ScanStatusResponse,
 )
 from fee_server.domain.osint.scoring import build_dashboard
+from fee_server.domain.verification.consent import verify_consent_token
 from fee_server.util.time import utcnow
 
 _TERMINAL = frozenset({"COMPLETED", "FAILED", "EXPIRED"})
@@ -49,7 +50,7 @@ class ScanService:
     # --- creación ---------------------------------------------------------
 
     def create_scan(self, request: ScanRequest, user: User) -> tuple[OsintScan, EngineRequest]:
-        self._validate(request)
+        self._validate(request, user.id)
 
         scan = OsintScan(
             user_id=user.id,
@@ -68,18 +69,31 @@ class ScanService:
         self._session.commit()
         return scan, self._engine_request(request)
 
-    def _validate(self, request: ScanRequest) -> None:
+    def _validate(self, request: ScanRequest, requester_id: str) -> None:
         if request.target_type not in TARGET_TYPES:
             raise UnsupportedTargetTypeError()
-        if not request.consent_self_audit:
-            raise ConsentRequiredError()
         if not is_valid_identifier(request.target_type, request.identifier):
             raise InvalidIdentifierError()
+        self._validate_consent(request, requester_id)
         for username in request.associated_usernames:
             if not is_valid_identifier("username", username):
                 raise InvalidIdentifierError()
         if request.associated_email and not is_valid_identifier("email", request.associated_email):
             raise InvalidIdentifierError()
+
+    def _validate_consent(self, request: ScanRequest, requester_id: str) -> None:
+        if request.consent_token is not None:
+            if request.target_type != "email":
+                raise InvalidIdentifierError()
+            verify_consent_token(
+                self._settings.jwt_secret,
+                request.consent_token,
+                request.identifier,
+                requester_id,
+            )
+            return
+        if not request.consent_self_audit:
+            raise ConsentRequiredError()
 
     def _engine_request(self, request: ScanRequest) -> EngineRequest:
         usernames: list[str] = list(request.associated_usernames)

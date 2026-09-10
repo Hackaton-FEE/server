@@ -58,6 +58,14 @@ class Settings(BaseSettings):
     # La prepara `vendor/osint/setup.sh`.
     osint_vendor_dir: str = "vendor/osint"
 
+    # --- Verificación de correo (consentimiento para escanear a terceros) ---
+    # Código estático para el hackathon: mientras no esté vacío, `confirm` acepta
+    # exactamente este valor. Vaciarlo (y añadir envío real) es el interruptor a
+    # modo funcional. Ver `domain/verification/`.
+    verification_static_code: str = "1234"
+    verification_code_ttl_seconds: int = 600
+    osint_consent_ttl_seconds: int = 3600
+
     @property
     def docs_enabled(self) -> bool:
         return self.environment != "production"

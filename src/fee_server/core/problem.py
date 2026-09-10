@@ -49,6 +49,24 @@ class InvalidSessionError(AuthError):
     detail = "La sesión no es válida. Inicia sesión de nuevo."
 
 
+class VerificationError(ProblemError):
+    """Base de los errores de verificación de correo."""
+
+    status_code: int = status.HTTP_400_BAD_REQUEST
+    code: str = "verification-error"
+    detail: str = "No fue posible completar la verificación."
+
+
+class InvalidVerificationTokenError(VerificationError):
+    code = "invalid-verification-token"
+    detail = "La verificación es inválida o expiró. Vuelve a solicitar el código."
+
+
+class InvalidVerificationCodeError(VerificationError):
+    code = "invalid-verification-code"
+    detail = "El código de verificación no es correcto."
+
+
 class OsintError(ProblemError):
     """Base de los errores del motor OSINT."""
 
@@ -69,7 +87,16 @@ class UnsupportedTargetTypeError(OsintError):
 
 class ConsentRequiredError(OsintError):
     code = "consent-required"
-    detail = "Se necesita el consentimiento de auto-auditoría para iniciar el escaneo."
+    detail = (
+        "Se necesita el consentimiento de auto-auditoría o un token de "
+        "consentimiento del titular del correo para iniciar el escaneo."
+    )
+
+
+class InvalidConsentError(OsintError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "invalid-consent"
+    detail = "El consentimiento del titular del correo es inválido o expiró."
 
 
 class ScanNotFoundError(OsintError):
