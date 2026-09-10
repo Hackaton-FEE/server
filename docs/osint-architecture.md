@@ -195,8 +195,16 @@ Request:
   `^\+[1-9]\d{7,14}$`). Si no valida → `400 invalid-identifier` (el detalle nunca
   repite la entrada).
 - `associated_usernames` / `associated_email`: opcionales; amplían la cascada.
-- `consent_self_audit`: debe ser `true`. Si falta o es `false` →
-  `400 consent-required`.
+- `consent_self_audit`: `true` para el camino de **auto-auditoría**.
+- `consent_token`: alternativa para el camino de **escaneo de terceros
+  consentido** (solo `target_type: "email"`). Lo emite
+  `POST /api/v1/verification/email/confirm` (§5.7) tras probar el titular que
+  controla el buzón. El servidor comprueba que el token está firmado, no ha
+  caducado y corresponde a `sha256(identifier)`.
+- Debe llegar **uno** de los dos: sin `consent_self_audit: true` ni un
+  `consent_token` válido → `400 consent-required`. Un `consent_token` con
+  `target_type` distinto de `email` → `400 invalid-identifier`. Un
+  `consent_token` inválido, caducado o de otro correo → `403 invalid-consent`.
 
 Response:
 
@@ -307,13 +315,41 @@ límite de duración.
 
 El usuario borra su escaneo y todos sus hallazgos. Idempotente.
 
+### 5.7 Verificación de correo (consentimiento de terceros)
+
+Ambas rutas requieren `Authorization: Bearer <JWT>` (la cuenta que solicita el
+escaneo). Flujo sin estado: nada se persiste, todo viaja en tokens firmados
+HMAC-SHA256 (`core/security/signed_token.py`, mismo patrón que el reto WebAuthn).
+
+`POST /api/v1/verification/email/request` → `200 OK`
+
+```json
+{ "email": "titular@example.com" }
+→ { "verification_token": "7b22…​.a1b2…", "expires_in": 600 }
+```
+
+`POST /api/v1/verification/email/confirm` → `200 OK`
+
+```json
+{ "verification_token": "7b22…​.a1b2…", "code": "1234" }
+→ { "consent_token": "7b22…​.c3d4…", "expires_in": 3600 }
+```
+
+**Hackathon**: el código es estático (`FEE_VERIFICATION_STATIC_CODE`, por defecto
+`"1234"`) y no se envía ningún correo. La costura para hacerlo funcional (código
+aleatorio + `EmailSender`) está descrita en `domain/verification/service.py`;
+son cuatro cambios localizados que no tocan este contrato.
+
 ### 5.6 Errores nuevos
 
 | Código | HTTP | Cuándo |
 | --- | --- | --- |
-| `invalid-identifier` | 400 | El identificador no cumple el patrón del tipo |
+| `invalid-identifier` | 400 | El identificador no cumple el patrón del tipo, o hay `consent_token` con `target_type` ≠ `email` |
 | `unsupported-target-type` | 400 | `target_type` fuera de la enumeración |
-| `consent-required` | 400 | `consent_self_audit` ausente o `false` |
+| `consent-required` | 400 | Ni `consent_self_audit: true` ni un `consent_token` válido |
+| `invalid-verification-token` | 400 | `verification_token` manipulado, caducado o con correo inválido |
+| `invalid-verification-code` | 400 | El código no coincide |
+| `invalid-consent` | 403 | `consent_token` inválido, caducado o de otro correo |
 | `scan-not-found` | 404 | No existe o pertenece a otra cuenta |
 | `scan-not-ready` | 409 | Se piden `results` de un escaneo `QUEUED` |
 | `rate-limited` | 429 | Cuota por cuenta superada (reusa el handler actual) |
@@ -374,9 +410,14 @@ Aplica [producto y datos](../rules/02-product-and-data.md).
 - **Identificador en reposo**: se cifra con una clave derivada de un secreto de
   entorno (`FEE_OSINT_ENC_KEY`, AES-GCM); en claro solo existe durante la
   ejecución del escaneo. La app recupera `identifier_hint` para mostrarlo.
-- **Consentimiento**: `consent_self_audit: true` obligatorio; se sella
-  `consent_at`. El producto es auto-auditoría; el contrato no ofrece escanear a
-  terceros.
+- **Consentimiento**: dos caminos, se sella `consent_at` en ambos.
+  1. *Auto-auditoría*: `consent_self_audit: true`.
+  2. *Terceros consentido* (solo `target_type: email`): un `consent_token`
+     firmado que prueba que el titular del correo controla el buzón (§5.7 y
+     ADR-OSINT-05). Sin ese token no se puede escanear un correo ajeno.
+  El correo del tercero nunca se persiste en claro: solo `identifier_sha256` e
+  `identifier_hint`, igual que en el camino propio. El token es sin estado
+  (`domain/verification/`); no hay tabla ni PII de terceros en la base de datos.
 - **Retención**: `expires_at` (por defecto 7 días). Una rutina de limpieza
   (`ScanService.purge_expired()`, invocable por cron externo o al crear un
   escaneo) marca `EXPIRED` y borra los `OsintFinding`. Sin *cascade* implícito a
@@ -673,6 +714,34 @@ Cada fase es un PR pequeño hacia `main` con aceptación observable.
   sitios (Amazon, Instagram, Snapchat) y comparte con Holehe la dependencia de
   proxy desde cloud; al ser 3 sitios, una rotación de IP simple basta. Ignorant
   solo imprime a stdout, así que el adaptador parsea texto en vez de un fichero.
+
+### ADR-OSINT-05 · Escaneo de terceros con consentimiento por posesión del buzón
+
+- **Estado**: aceptado (hackathon).
+- **Contexto**: además de la auto-auditoría, se quiere que la cuenta A pueda
+  escanear el correo de B de forma consentida. Hace falta una prueba de que B
+  autoriza. La regla del repo pide no guardar PII de terceros ni añadir
+  infraestructura.
+- **Decisión**: B demuestra que controla el buzón devolviendo un código de
+  verificación. El flujo es **sin estado**: `verification_token` y
+  `consent_token` son tokens HMAC firmados (`core/security/signed_token.py`,
+  generalización del patrón de `challenge.py`); nada se persiste. Para el
+  hackathon el código es **estático** (`FEE_VERIFICATION_STATIC_CODE="1234"`) y
+  no se envía correo. Tanto el `verification_token` como el `consent_token` van
+  ligados a `sha256(correo)` **y a la cuenta que inició el flujo**
+  (`requester_id`); `ScanService` exige el `consent_token` para el camino de
+  terceros y comprueba que lo emitió esa misma cuenta.
+- **Consecuencias**: +cero infraestructura, cero cambios de BD, cero migración;
+  +la costura a funcional real son 4 cambios localizados (código aleatorio,
+  `sha256(code)` en el token, `EmailSender`, vaciar la variable) sin tocar el
+  contrato HTTP. −el código es reutilizable durante su TTL (mismo tradeoff
+  asumido en `challenge.py`). −con el código estático la prueba de
+  consentimiento es simbólica; solo tiene valor real tras activar el envío.
+- **Checklist antes de activar el envío real** (hoy no aplica porque el código
+  es estático): código de **≥6 dígitos**; contador de intentos **por token**
+  (no solo el `@limiter.limit("5/minute")` por IP en `confirm`); límite de
+  `request` **por usuario** además de por IP (evita email-bombing con
+  direcciones ajenas); TTL del código ≤ 10 min.
 
 ---
 
