@@ -119,7 +119,10 @@ def _consent_token(client, headers, email: str) -> str:
 
 def test_third_party_email_scan_needs_a_consent_token(client, headers):
     response = _start(
-        client, headers, target_type="email", identifier="tercero@example.com",
+        client,
+        headers,
+        target_type="email",
+        identifier="tercero@example.com",
         consent_self_audit=False,
     )
     assert response.status_code == 400
@@ -131,8 +134,12 @@ def test_third_party_email_scan_with_valid_consent_token_runs(client, headers):
     consent = _consent_token(client, headers, email)
 
     accepted = _start(
-        client, headers, target_type="email", identifier=email,
-        consent_self_audit=False, consent_token=consent,
+        client,
+        headers,
+        target_type="email",
+        identifier=email,
+        consent_self_audit=False,
+        consent_token=consent,
     )
     assert accepted.status_code == 202
     scan_id = accepted.json()["scan_id"]
@@ -143,8 +150,12 @@ def test_consent_token_for_a_different_email_is_rejected(client, headers):
     consent = _consent_token(client, headers, "otro@example.com")
 
     response = _start(
-        client, headers, target_type="email", identifier="victima@example.com",
-        consent_self_audit=False, consent_token=consent,
+        client,
+        headers,
+        target_type="email",
+        identifier="victima@example.com",
+        consent_self_audit=False,
+        consent_token=consent,
     )
     assert response.status_code == 403
     assert response.json()["type"].endswith("/invalid-consent")
@@ -155,8 +166,12 @@ def test_consent_token_from_another_account_is_rejected(client, headers, other_h
     consent = _consent_token(client, other_headers, email)
 
     response = _start(
-        client, headers, target_type="email", identifier=email,
-        consent_self_audit=False, consent_token=consent,
+        client,
+        headers,
+        target_type="email",
+        identifier=email,
+        consent_self_audit=False,
+        consent_token=consent,
     )
     assert response.status_code == 403
     assert response.json()["type"].endswith("/invalid-consent")
@@ -166,8 +181,12 @@ def test_consent_token_is_only_valid_for_the_email_vector(client, headers):
     consent = _consent_token(client, headers, "tercero@example.com")
 
     response = _start(
-        client, headers, target_type="username", identifier="algun_alias",
-        consent_self_audit=False, consent_token=consent,
+        client,
+        headers,
+        target_type="username",
+        identifier="algun_alias",
+        consent_self_audit=False,
+        consent_token=consent,
     )
     assert response.status_code == 400
     assert response.json()["type"].endswith("/invalid-identifier")
@@ -178,8 +197,12 @@ def test_tampered_consent_token_is_rejected(client, headers):
     body, signature = consent.split(".")
 
     response = _start(
-        client, headers, target_type="email", identifier="tercero@example.com",
-        consent_self_audit=False, consent_token=f"{body[:-2]}00.{signature}",
+        client,
+        headers,
+        target_type="email",
+        identifier="tercero@example.com",
+        consent_self_audit=False,
+        consent_token=f"{body[:-2]}00.{signature}",
     )
     assert response.status_code == 403
 

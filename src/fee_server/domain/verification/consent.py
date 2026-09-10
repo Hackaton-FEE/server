@@ -19,9 +19,7 @@ def email_digest(email: str) -> str:
     return sha256(email.strip().casefold().encode("utf-8")).hexdigest()
 
 
-def verify_consent_token(
-    secret: str, consent_token: str, email: str, requester_id: str
-) -> None:
+def verify_consent_token(secret: str, consent_token: str, email: str, requester_id: str) -> None:
     """Comprueba que `consent_token` autoriza a `requester_id` a escanear `email`.
 
     Lanza `InvalidConsentError` si la firma, el propósito o la caducidad fallan,
