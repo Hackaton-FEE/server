@@ -77,7 +77,7 @@ class _RealEngine:
 
     @property
     def _proxy(self) -> str:
-        return self._settings.osint_proxy_url
+        return self._settings.osint_proxy_url.get_secret_value()
 
     def _require(self, path: Path) -> Path:
         if not path.exists():
@@ -191,8 +191,10 @@ class MaigretEngine(_RealEngine):
                 ]
                 if database.exists():
                     argv += ["--db", str(database)]
-                if self._proxy:
-                    argv += ["--proxy", self._proxy]
+                # Maigret 0.6.5 combina ProxyConnector(--proxy) con
+                # ClientSession(trust_env=True): usar ambos conecta el proxy
+                # contra sí mismo. El entorno cubre también sus activadores y
+                # curl_cffi; no pasar --proxy evita ese doble salto.
 
                 run_tool(
                     argv,

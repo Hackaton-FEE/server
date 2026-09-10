@@ -196,9 +196,7 @@ def build_identity_graph(findings: Sequence[Finding]) -> IdentityGraph:
     if not confirmed:
         return IdentityGraph()
 
-    nodes = tuple(
-        IdentityNode(_node_id(f), f.platform, f.username, f.category) for f in confirmed
-    )
+    nodes = tuple(IdentityNode(_node_id(f), f.platform, f.username, f.category) for f in confirmed)
     values = {_node_id(f): _linking_values(f) for f in confirmed}
 
     edges: list[IdentityEdge] = []
@@ -249,9 +247,7 @@ def build_timeline(findings: Sequence[Finding], *, now: datetime | None = None) 
     )
     oldest_date, oldest = dated[0]
     newest_date, newest = dated[-1]
-    dormant = tuple(
-        entry.platform for entry in entries if entry.age_years >= _DORMANT_YEARS
-    )
+    dormant = tuple(entry.platform for entry in entries if entry.age_years >= _DORMANT_YEARS)
     return Timeline(
         entries=entries,
         oldest_platform=oldest.platform,

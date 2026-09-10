@@ -106,10 +106,26 @@ def test_timeline_is_empty_without_dates():
 
 def test_masked_emails_from_two_sites_form_one_group():
     findings = [
-        Finding("Adobe", "other", None, None, CONFIRMED, 75, ("holehe",),
-                {"masked_email": "a***@e***.com"}),
-        Finding("Spotify", "music", None, None, CONFIRMED, 75, ("blackbird",),
-                {"masked_email": "a***@e***.com"}),
+        Finding(
+            "Adobe",
+            "other",
+            None,
+            None,
+            CONFIRMED,
+            75,
+            ("holehe",),
+            {"masked_email": "a***@e***.com"},
+        ),
+        Finding(
+            "Spotify",
+            "music",
+            None,
+            None,
+            CONFIRMED,
+            75,
+            ("blackbird",),
+            {"masked_email": "a***@e***.com"},
+        ),
     ]
 
     contacts = reconstruct_contacts(findings, provided_email=None)
@@ -123,8 +139,16 @@ def test_masked_emails_from_two_sites_form_one_group():
 
 def test_provided_email_consistency_is_flagged():
     findings = [
-        Finding("Adobe", "other", None, None, CONFIRMED, 75, ("holehe",),
-                {"masked_email": "a***@example.com"}),
+        Finding(
+            "Adobe",
+            "other",
+            None,
+            None,
+            CONFIRMED,
+            75,
+            ("holehe",),
+            {"masked_email": "a***@example.com"},
+        ),
     ]
 
     consistent = reconstruct_contacts(findings, provided_email="ada@example.com")
@@ -136,8 +160,16 @@ def test_provided_email_consistency_is_flagged():
 
 def test_consistency_check_handles_non_length_preserving_masks():
     findings = [
-        Finding("Adobe", "other", None, None, CONFIRMED, 75, ("holehe",),
-                {"masked_email": "a***@e***.com"}),
+        Finding(
+            "Adobe",
+            "other",
+            None,
+            None,
+            CONFIRMED,
+            75,
+            ("holehe",),
+            {"masked_email": "a***@e***.com"},
+        ),
     ]
 
     match = reconstruct_contacts(findings, provided_email="ada@example.com")
@@ -149,8 +181,16 @@ def test_consistency_check_handles_non_length_preserving_masks():
 
 def test_malformed_provided_email_is_treated_as_inconsistent():
     findings = [
-        Finding("Adobe", "other", None, None, CONFIRMED, 75, ("holehe",),
-                {"masked_email": "a***@example.com"}),
+        Finding(
+            "Adobe",
+            "other",
+            None,
+            None,
+            CONFIRMED,
+            75,
+            ("holehe",),
+            {"masked_email": "a***@example.com"},
+        ),
     ]
 
     contacts = reconstruct_contacts(findings, provided_email="not-an-email")
