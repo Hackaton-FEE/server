@@ -12,6 +12,8 @@ RUN python -m pip install --no-cache-dir uv==0.12.12 \
 
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
+COPY alembic.ini ./
+COPY migrations ./migrations
 RUN uv sync --frozen --no-dev --no-cache
 
 # Herramientas OSINT reales (opcional; requiere red en el build).
