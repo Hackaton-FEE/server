@@ -97,11 +97,41 @@ Authorization: Bearer <access_token>
 { "id": "9a8f...", "label": "Mi bóveda FEE", "created_at": "2026-09-09T15:45:00Z", "credentials_count": 1 }
 ```
 
+### 5. Verificación de correo (consentimiento para escanear a un tercero)
+
+Prueba que el titular de un correo consiente que otra cuenta escanee su huella
+digital. El `consent_token` resultante se pasa a `POST /api/v1/osint/scans`
+(`target_type: "email"`). **Sin estado**: nada se guarda, el flujo viaja en
+tokens firmados, igual que el `challenge_token`. Ambas rutas requieren
+`Authorization: Bearer <access_token>` de la cuenta que pide el escaneo.
+
+```
+POST /api/v1/verification/email/request
+{ "email": "titular@example.com" }
+
+200 OK
+{ "verification_token": "7b22...a1", "expires_in": 600 }
+```
+
+```
+POST /api/v1/verification/email/confirm
+{ "verification_token": "7b22...a1", "code": "1234" }
+
+200 OK
+{ "consent_token": "7b22...c3", "expires_in": 3600 }
+```
+
+> **Hackathon**: el código es estático (`"1234"`) y no se envía ningún correo.
+> El contrato no cambiará al activar el envío real.
+
 ## Errores (RFC 7807)
 
 | `type` (sufijo) | HTTP | Cuándo |
 | --- | --- | --- |
 | `invalid-challenge` | 400 | `challenge_token` manipulado, caducado o de otro propósito |
+| `invalid-verification-token` | 400 | `verification_token` manipulado, caducado o con correo inválido |
+| `invalid-verification-code` | 400 | el código no coincide |
+| `invalid-consent` | 403 | `consent_token` inválido, caducado o de otro correo |
 | `invalid-credential` | 400 | la respuesta del autenticador no verifica, o esa passkey ya está registrada |
 | `unknown-credential` | 401 | la passkey no está registrada |
 | `invalid-session` | 401 | JWT o refresh inválido / expirado / revocado |

@@ -19,6 +19,9 @@ class ScanRequest(_StrictRequest):
     associated_usernames: list[str] = Field(default_factory=list, max_length=10)
     associated_email: str | None = Field(default=None, max_length=254)
     consent_self_audit: bool = False
+    # Consentimiento del titular del correo para el camino de escaneo de terceros
+    # (solo `target_type: "email"`). Lo emite `POST /verification/email/confirm`.
+    consent_token: str | None = Field(default=None, max_length=4096)
 
 
 class ScanAccepted(BaseModel):
