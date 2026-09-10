@@ -1,5 +1,10 @@
 # Desplegar FEE en Oracle Cloud
 
+Para actualizaciones de OSINT desde la revisión `a247a4c`, usa el procedimiento
+actual de [proxy Decodo y migración 0003](decodo-proxy.md), que recrea únicamente
+la API. Las instrucciones de arranque inicial siguientes son una referencia
+histórica y no deben usarse para recrear el túnel durante una actualización.
+
 Guía revisada el 10 de septiembre de 2026. Configuración desplegada desde `deploy/oracle-auth-scan`, basada en `feature/auth-scan-modules` (`b97534a`), y transferida por rsync. Los cambios de configuración siguen sin commit/push: un `git clone` del remoto todavía no los incluye. Consulta también [el README](../README.md).
 
 **FEE está desplegado en [https://backosisnt.ici-labs.com](https://backosisnt.ici-labs.com/api/v1/health)**; su health público devuelve 200. La VM `RanchoPuebloViejo` usa Ubuntu 22.04 ARM64 e IP `163.192.148.22`, en Querétaro. SSH fue recuperado y verificado con la clave del host contrastada por consola serie. La API construida en ARM nativo y PostgreSQL están healthy, con migración `823459897ec8`. El túnel Cloudflare está conectado y healthy, hacia `http://api:8000`, sin puertos de FEE publicados en el host.

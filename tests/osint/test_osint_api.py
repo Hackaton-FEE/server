@@ -72,9 +72,9 @@ def test_email_target_runs_holehe(client, headers):
 
 
 def test_phone_target_runs_ignorant(client, headers):
-    scan_id = _start(
-        client, headers, target_type="phone", identifier="+34611223344"
-    ).json()["scan_id"]
+    scan_id = _start(client, headers, target_type="phone", identifier="+34611223344").json()[
+        "scan_id"
+    ]
 
     dashboard = client.get(f"{SCANS}/{scan_id}/results", headers=headers).json()
     assert "ignorant" in dashboard["summary"]["engines_run"]
