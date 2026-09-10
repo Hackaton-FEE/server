@@ -15,7 +15,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from fee_server.core.config import Settings
-from fee_server.domain.osint.catalog import is_valid_identifier
+from fee_server.domain.osint.catalog import is_valid_identifier, split_phone
 from fee_server.domain.osint.engines.base import (
     ENGINE_DEGRADED,
     ENGINE_ERROR,
@@ -27,6 +27,7 @@ from fee_server.domain.osint.engines.base import (
 from fee_server.domain.osint.engines.parsers import (
     parse_blackbird_json,
     parse_holehe_csv,
+    parse_ignorant_output,
     parse_maigret_simple_json,
 )
 from fee_server.domain.osint.engines.process import ToolExecutionError, run_tool
@@ -99,6 +100,12 @@ class _RealEngine:
         if not is_valid_identifier("email", email):
             raise ToolExecutionError("email no válido para OSINT")
         return email
+
+    @staticmethod
+    def _safe_phone(phone: str) -> str:
+        if not is_valid_identifier("phone", phone):
+            raise ToolExecutionError("teléfono no válido para OSINT")
+        return phone
 
 
 class BlackbirdEngine(_RealEngine):
@@ -236,5 +243,57 @@ class HoleheEngine(_RealEngine):
             findings = tuple(parse_holehe_csv(report.read_text("utf-8")))
 
         # Sin proxy residencial, holehe topa rate-limit en casi todos los sitios.
+        degraded = any(f.status == RATE_LIMITED for f in findings)
+        return EngineResult(self.name, ENGINE_DEGRADED if degraded else ENGINE_OK, findings)
+
+
+class IgnorantEngine(_RealEngine):
+    """Vector de número telefónico (Amazon, Instagram, Snapchat).
+
+    Ignorant solo imprime a stdout (no genera fichero), así que el adaptador
+    parsea el resultado de `run_tool`. Comparte con Holehe la técnica de
+    account-recovery y, por tanto, la sensibilidad a rate-limit desde cloud.
+    """
+
+    name = "ignorant"
+
+    def run(self, request: EngineRequest) -> EngineResult:
+        if not request.phone:
+            return EngineResult(self.name, ENGINE_SKIPPED)
+
+        binary = self._require(self._vendor / "ignorant" / ".venv" / "bin" / "ignorant")
+        phone = self._safe_phone(request.phone)
+        try:
+            country, national = split_phone(phone)
+        except ValueError as exc:
+            return EngineResult(self.name, ENGINE_ERROR, (), f"invalid-phone: {exc}")
+
+        with _workdir() as work:
+            argv = [
+                str(binary),
+                country,
+                national,
+                "--no-color",
+                "--no-clear",
+                "-T",
+                _PER_REQUEST_TIMEOUT,
+            ]
+            outcome = run_tool(
+                argv,
+                timeout=self._timeout,
+                max_output_bytes=self._max_bytes,
+                proxy_url=self._proxy,
+                cwd=work,
+            )
+
+        if outcome.timed_out:
+            return EngineResult(self.name, ENGINE_ERROR, (), "timeout")
+
+        findings = tuple(parse_ignorant_output(outcome.stdout))
+        # Ignorant cierra siempre con "N websites checked in ...". Sin esa marca
+        # y sin hallazgos, la herramienta no llegó a ejecutarse.
+        if not findings and "websites checked" not in outcome.stdout:
+            return EngineResult(self.name, ENGINE_ERROR, (), "no-output")
+
         degraded = any(f.status == RATE_LIMITED for f in findings)
         return EngineResult(self.name, ENGINE_DEGRADED if degraded else ENGINE_OK, findings)

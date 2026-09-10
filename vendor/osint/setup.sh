@@ -6,6 +6,7 @@ set -euo pipefail
 # --- Versiones fijadas (cambiar aquí para actualizar) ---
 MAIGRET_VERSION="0.6.5"
 HOLEHE_VERSION="1.61"
+IGNORANT_VERSION="1.2"
 # Blackbird no publica tags; se fija el commit de `main`.
 BLACKBIRD_COMMIT="b45505080ef51bb3ef52dc29879ee6bef31e5b94"
 BLACKBIRD_REPO="https://github.com/p1ngul1n0/blackbird.git"
@@ -25,6 +26,11 @@ uv pip install --python "${VENDOR_DIR}/maigret/.venv/bin/python" "maigret==${MAI
 echo "[osint] holehe ${HOLEHE_VERSION}"
 uv venv --python "${PYTHON_VERSION}" "${VENDOR_DIR}/holehe/.venv"
 uv pip install --python "${VENDOR_DIR}/holehe/.venv/bin/python" "holehe==${HOLEHE_VERSION}"
+
+# --- ignorant (PyPI; vector de número telefónico) ---
+echo "[osint] ignorant ${IGNORANT_VERSION}"
+uv venv --python "${PYTHON_VERSION}" "${VENDOR_DIR}/ignorant/.venv"
+uv pip install --python "${VENDOR_DIR}/ignorant/.venv/bin/python" "ignorant==${IGNORANT_VERSION}"
 
 # --- blackbird (repo; no se publica en PyPI) ---
 echo "[osint] blackbird ${BLACKBIRD_COMMIT:0:12}"
@@ -48,3 +54,4 @@ test -f "${BB_DIR}/data/wmn-data.json" || {
 }
 
 echo "[osint] listo. Configura FEE_OSINT_ENGINE_MODE=real para usarlas."
+echo "[osint] target types: username (blackbird/maigret), email (holehe), phone (ignorant)."

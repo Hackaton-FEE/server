@@ -28,7 +28,7 @@ def test_full_scan_flow_reaches_a_dashboard(client, headers):
     status_body = status.json()
     assert status_body["status"] == "COMPLETED"
     assert status_body["progress_percentage"] == 100
-    assert set(status_body["completed_engines"]) == {"blackbird", "maigret", "holehe"}
+    assert set(status_body["completed_engines"]) == {"blackbird", "maigret", "holehe", "ignorant"}
 
     results = client.get(f"{SCANS}/{scan_id}/results", headers=headers)
     assert results.status_code == 200
@@ -38,6 +38,11 @@ def test_full_scan_flow_reaches_a_dashboard(client, headers):
     assert dashboard["partial"] is False
     assert dashboard["summary"]["platforms_found"] >= 1
     assert dashboard["categories"]
+
+    correlation = dashboard["correlation"]
+    assert correlation is not None
+    assert correlation["identity_graph"]["nodes"]
+    assert correlation["timeline"]["oldest_platform"] == "GitHub"
 
 
 def test_github_is_merged_across_engines(client, headers):
@@ -60,6 +65,27 @@ def test_email_target_runs_holehe(client, headers):
     assert "holehe" in dashboard["summary"]["engines_run"]
     platforms = {item["platform"] for cat in dashboard["categories"] for item in cat["items"]}
     assert "Adobe" in platforms
+
+    contacts = dashboard["correlation"]["reconstructed_contacts"]
+    assert any(c["kind"] == "email" for c in contacts)
+    assert all(c["consistent_with_provided"] is False for c in contacts)
+
+
+def test_phone_target_runs_ignorant(client, headers):
+    scan_id = _start(
+        client, headers, target_type="phone", identifier="+34611223344"
+    ).json()["scan_id"]
+
+    dashboard = client.get(f"{SCANS}/{scan_id}/results", headers=headers).json()
+    assert "ignorant" in dashboard["summary"]["engines_run"]
+    platforms = {item["platform"] for cat in dashboard["categories"] for item in cat["items"]}
+    assert "Instagram" in platforms
+
+
+def test_name_target_with_spaces_is_accepted(client, headers):
+    response = _start(client, headers, target_type="name", identifier="Ada Lovelace")
+    assert response.status_code == 202
+    assert response.json()["status"] == "QUEUED"
 
 
 def test_invalid_identifier_is_rejected(client, headers):

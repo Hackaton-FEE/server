@@ -20,8 +20,11 @@ normaliza sus salidas para alimentar un dashboard en la app móvil.
 
 ### Dentro
 
-- Dos vectores de entrada: **username/alias** y **correo electrónico**.
-- Tres motores: **Blackbird**, **Maigret**, **Holehe**.
+- Vectores de entrada: **username/alias**, **correo electrónico** y **número de
+  teléfono** (E.164). El target type **`name`** (nombre completo, admite espacios
+  y acentos) se valida y persiste pero todavía no dispara ningún motor: ningún
+  motor actual busca por nombre real (pendiente de decidir el consumidor).
+- Cuatro motores: **Blackbird**, **Maigret**, **Holehe**, **Ignorant**.
 - Ejecución asíncrona (`202 Accepted` + progreso), normalización a un esquema
   canónico, deduplicación entre motores, cálculo de un *Exposure Score* y una
   proyección lista para el dashboard móvil.
@@ -47,18 +50,20 @@ lugar aportando el vector correo.
 
 ---
 
-## 2. Las tres herramientas y su rol
+## 2. Las cuatro herramientas y su rol
 
 | Motor | Vector | Cobertura | Profundidad | Salida nativa | Rol en la cascada |
 | --- | --- | --- | --- | --- | --- |
 | **Blackbird** | username, email | ≈700 (WhatsMyName) | Media: categoría semántica + metadatos ligeros (avatar, nombre) | JSON (`--json`) | Primera pasada rápida y estructurada; descubre alias y pistas para pivotar |
 | **Maigret** | username, IDs | ≈5373 | Máxima: `uid`, nombre real, alta, ubicación, followers, grafo | JSON (`-J simple`, `ndjson`) | Dossier profundo sobre los alias confirmados y los IDs nuevos |
 | **Holehe** | email | ≈120 | Presencia + fuga parcial (teléfono/correo enmascarados) | CSV / stdout JSON | Cuentas ligadas al correo que ningún motor de username ve |
+| **Ignorant** | phone | 3 (Amazon, Instagram, Snapchat) | Presencia | stdout (`[+]`/`[-]`/`[x]` por dominio) | Cuentas ligadas a un número de teléfono E.164 |
 
-Las tres son Python, asíncronas y sensibles a *rate-limiting*. Holehe es la más
-frágil sin proxy (visto en los tests del laboratorio: gran parte de los sitios
-responden `rateLimit: True`); el diseño lo trata como degradación esperada, no
-como fallo.
+Las cuatro son Python, asíncronas y sensibles a *rate-limiting*. Holehe e Ignorant
+usan la técnica de *account-recovery* y son las más frágiles sin proxy (gran parte
+de los sitios responden `rateLimit: True` desde IPs de datacenter); el diseño lo
+trata como degradación esperada, no como fallo. `FEE_OSINT_PROXY_URL` es el punto
+de enganche para un proxy HTTP/SOCKS.
 
 ---
 
@@ -73,7 +78,7 @@ C4Container
     Container(app, "App móvil", "Flutter", "Dashboard de huella digital: grafo, Exposure Score, progreso en vivo")
     Container(api, "FEE Server", "FastAPI · Python 3.12", "App factory: auth passkey + módulo OSINT. Orquesta la cascada in-process")
     ContainerDb(db, "Base de datos", "SQLite (local) / PostgreSQL-Supabase (deploy)", "Cuentas, sesiones, escaneos OSINT y hallazgos con caducidad")
-    Container(tools, "Herramientas OSINT vendorizadas", "Blackbird · Maigret · Holehe", "Cada una en su propio entorno virtual; se invocan como subproceso")
+    Container(tools, "Herramientas OSINT vendorizadas", "Blackbird · Maigret · Holehe · Ignorant", "Cada una en su propio entorno virtual; se invocan como subproceso")
     System_Ext(sites, "Plataformas web", "≈700-5000 sitios consultados por HTTP")
     System_Ext(proxy, "Gateway de proxies (opcional)", "Proxies residenciales para mitigar rate-limit")
 
@@ -96,7 +101,7 @@ graph TD
     Router["api/v1/osint.py<br/>rutas HTTP"] --> Service["domain/osint/service.py<br/>ScanService"]
     Service --> Runner["ScanRunner<br/>orquesta la cascada (asyncio)"]
     Service --> Repo["repository.py<br/>persistencia"]
-    Runner --> Engines["engines/*.py<br/>BlackbirdEngine · MaigretEngine · HoleheEngine"]
+    Runner --> Engines["engines/*.py<br/>BlackbirdEngine · MaigretEngine · HoleheEngine · IgnorantEngine"]
     Engines --> Subproc["engines/runner.py<br/>ejecución subprocess: timeout, proxy, límite de salida"]
     Runner --> Normalize["normalize.py<br/>salida cruda -> Finding[]"]
     Normalize --> Dedup["dedup.py<br/>fusión entre motores"]
@@ -139,6 +144,7 @@ src/fee_server/
       blackbird.py
       maigret.py
       holehe.py
+      ignorant.py
   db/
     models.py                # + OsintScan, OsintFinding
 migrations/versions/
@@ -146,7 +152,7 @@ migrations/versions/
 vendor/osint/
   README.md                  # layout esperado y validación manual del modo real
   setup.sh                   # crea un .venv por herramienta con uv (versiones fijadas)
-  .gitignore                 # blackbird/ maigret/ holehe/ los genera setup.sh
+  .gitignore                 # blackbird/ maigret/ holehe/ ignorant/ los genera setup.sh
 tests/osint/
   conftest.py
   fakes.py                   # FakeEngine con salidas de laboratorio
@@ -182,10 +188,12 @@ Request:
 }
 ```
 
-- `target_type`: `"username"` | `"email"`.
+- `target_type`: `"username"` | `"email"` | `"name"` | `"phone"`.
 - `identifier`: obligatorio. Validado contra un patrón estricto por tipo
-  (username: `^[A-Za-z0-9._-]{2,64}$`; email: RFC 5322 simple). Si no valida →
-  `400 invalid-identifier` (el detalle nunca repite la entrada).
+  (username: `^[A-Za-z0-9._-]{2,64}$`; email: RFC 5322 simple; name: empieza por
+  letra Unicode y admite espacios, `.`, `'`, `-`, 2-80 chars; phone: E.164
+  `^\+[1-9]\d{7,14}$`). Si no valida → `400 invalid-identifier` (el detalle nunca
+  repite la entrada).
 - `associated_usernames` / `associated_email`: opcionales; amplían la cascada.
 - `consent_self_audit`: debe ser `true`. Si falta o es `false` →
   `400 consent-required`.
@@ -236,7 +244,26 @@ Proyección para el dashboard. Disponible con `status` `COMPLETED` (o
     "high_confidence": 12,
     "potential_matches": 6,
     "rate_limited": 4,
-    "engines_run": ["blackbird", "maigret", "holehe"]
+    "engines_run": ["blackbird", "maigret", "holehe", "ignorant"]
+  },
+  "correlation": {
+    "identity_graph": {
+      "nodes": [{ "id": "GitHub:mi_alias", "platform": "GitHub", "username": "mi_alias", "category": "coding" }],
+      "edges": [{ "source": "GitHub:mi_alias", "target": "GitLab:mi_alias", "shared": ["full_name", "username"], "weight": 2 }],
+      "clusters": [["GitHub:mi_alias", "GitLab:mi_alias"]]
+    },
+    "timeline": {
+      "entries": [{ "platform": "GitHub", "username": "mi_alias", "created_at": "2011-09-03T15:26:22+00:00", "age_years": 15.0 }],
+      "oldest_platform": "GitHub",
+      "oldest_date": "2011-09-03T15:26:22+00:00",
+      "newest_platform": "Reddit",
+      "newest_date": "2021-04-10T00:00:00+00:00",
+      "span_years": 9.6,
+      "dormant_old_accounts": ["GitHub"]
+    },
+    "reconstructed_contacts": [
+      { "kind": "email", "pattern": "m***@e***.com", "sources": ["holehe"], "count": 1, "consistent_with_provided": true }
+    ]
   },
   "categories": [
     {
@@ -303,7 +330,7 @@ Tipos portables (SQLite y PostgreSQL), igual que `db/models.py`.
 | --- | --- | --- |
 | `id` | `String(36)` PK | UUID |
 | `user_id` | FK `users.id` `ON DELETE CASCADE` | dueño |
-| `target_type` | `String(16)` | `username` \| `email` |
+| `target_type` | `String(16)` | `username` \| `email` \| `name` \| `phone` |
 | `identifier_ciphertext` | `LargeBinary` | identificador cifrado (ver §7) |
 | `identifier_hint` | `String(16)` | p. ej. `mi_a…` para mostrar en la app |
 | `consent_at` | `DateTime(tz)` | sello de la atestación |
@@ -312,6 +339,7 @@ Tipos portables (SQLite y PostgreSQL), igual que `db/models.py`.
 | `exposure_score` | `Integer` nullable | |
 | `risk_level` | `String(16)` nullable | |
 | `engines` | `JSON` | por motor: `{status, started_at, finished_at, error_category}` |
+| `correlation` | `JSON` nullable | capa de correlación (§9.5): grafo de identidad, timeline y contactos reconstruidos. Se calcula al completar el escaneo y se borra al caducar |
 | `created_at` / `completed_at` | `DateTime(tz)` | |
 | `expires_at` | `DateTime(tz)` | por defecto `created_at + FEE_OSINT_RETENTION_DAYS` |
 
@@ -380,6 +408,7 @@ sequenceDiagram
     participant BB as BlackbirdEngine
     participant MG as MaigretEngine
     participant HO as HoleheEngine
+    participant IG as IgnorantEngine
     participant Norm as normalize + dedup + scoring
     participant DB as repository
 
@@ -405,6 +434,12 @@ sequenceDiagram
         Run->>Norm: normalize(holehe) -> Finding[]
     end
 
+    alt hay número de teléfono (target_type = phone)
+        Run->>IG: check(country, national)  %% Fase D
+        IG-->>Run: EngineResult (stdout parseado)
+        Run->>Norm: normalize(ignorant) -> Finding[]
+    end
+
     Run->>Norm: merge_findings() · exposure_score() · build_dashboard()
     Run->>DB: status = COMPLETED · score · progress 100 · evento done
 ```
@@ -417,6 +452,11 @@ Maigret se ejecuta con `--no-recursion`.
 **Descubrimiento de email** (para fase C): si el usuario no dio correo, se toma
 un `masked_email` o un correo en bio expuesto por Maigret. Si no hay ninguno,
 Holehe se omite y se registra `engines.holehe.status = "skipped"`.
+
+**Vector de teléfono** (fase D): solo se ejecuta Ignorant cuando
+`target_type = phone`. El identificador E.164 se divide en (código de país,
+número nacional) con `catalog.split_phone` (apoyado en `phonenumbers`). Sin
+número, `engines.ignorant.status = "skipped"`.
 
 **Tolerancia a fallos**: cada motor tiene `timeout` propio; un fallo o timeout
 marca ese motor como `error`/`degraded` y **no** aborta el escaneo. El resultado
@@ -455,13 +495,15 @@ estructuras, nunca muta las anteriores (regla de inmutabilidad del proyecto).
 | Blackbird `FOUND` | `CONFIRMED` | 80 (+10 si trae `metadata`) |
 | Holehe `exists: true` | `CONFIRMED` | 75 |
 | Holehe `rateLimit: true` | `RATE_LIMITED` | 0 (no cuenta como hallazgo) |
+| Ignorant `[+]` (usado) | `CONFIRMED` | 70 |
+| Ignorant `[x]` (rate limit) | `RATE_LIMITED` | 0 (no cuenta como hallazgo) |
 
 ### 9.3 `merge_findings`
 
 Clave de fusión: `(platform_canónico, username_normalizado)`.
 Al fusionar: `sources` = unión; `confidence` = máx + bonificación por
 corroboración (`+10`, techo 98 si ≥2 motores independientes); `details` = unión
-por clave dando prioridad al motor más profundo (Maigret > Blackbird > Holehe);
+por clave dando prioridad al motor más profundo (Maigret > Blackbird > Holehe/Ignorant);
 `status` = el más fuerte.
 
 ### 9.4 Exposure Score (0–100)
@@ -479,6 +521,29 @@ Combinación ponderada, documentada y ajustable por constantes en `scoring.py`:
 `>=75 HIGH`). Los `POTENTIAL_MATCH` y `RATE_LIMITED` se muestran pero pesan
 poco / nada en el score.
 
+### 9.5 Correlación (`correlation.py`)
+
+Capa de solo lectura sobre los `Finding[]` ya deduplicados. Funciones puras y
+deterministas, sin red ni dependencias nuevas; `correlate()` corre una vez al
+completar el escaneo y su resultado se persiste en `OsintScan.correlation`. No
+altera el `exposure_score` (previsto para una fase posterior). Tres señales:
+
+- **Grafo de identidad**: un nodo por cuenta `CONFIRMED` con username; una arista
+  entre dos cuentas que comparten un valor casefold no vacío de `full_name`,
+  `location`, `company` o `username`. Las componentes conexas de tamaño ≥ 2 son
+  los *clústeres* de identidad. Responde "¿qué cuentas están demostrablemente
+  ligadas a la misma persona?".
+- **Timeline de antigüedad**: a partir de `creation_date` (ISO 8601; una fecha
+  ilegible se ignora sin romper). Devuelve entradas ordenadas y `oldest`/`newest`,
+  `span_years` y `dormant_old_accounts` (creadas hace ≥ 5 años).
+- **Contactos reconstruidos**: agrupa los `masked_email` / `masked_phone` que
+  varios sitios exponen; por grupo da `pattern`, `sources`, `count` y, si el
+  usuario aportó correo, `consistent_with_provided`.
+
+Privacidad: no introduce datos crudos nuevos (solo cruza `details` ya
+persistidos), no registra nada, y se borra junto con los hallazgos al caducar
+el escaneo (§7).
+
 ---
 
 ## 10. Configuración (`Settings`, prefijo `FEE_`)
@@ -491,7 +556,7 @@ poco / nada en el score.
 | `FEE_OSINT_MAX_CONCURRENT_SCANS` | `2` | escaneos simultáneos por instancia |
 | `FEE_OSINT_ENGINE_TIMEOUT_SECONDS` | `120` | presupuesto de reloj de pared por motor (Maigret ×3); el timeout por petición HTTP es fijo (15 s) |
 | `FEE_OSINT_MAX_OUTPUT_BYTES` | `5_000_000` | cap de stdout por subproceso |
-| `FEE_OSINT_PROXY_URL` | vacío | proxy HTTP/SOCKS para las herramientas |
+| `FEE_OSINT_PROXY_URL` | vacío | proxy HTTP/SOCKS para las herramientas (crítico para Holehe e Ignorant desde cloud) |
 | `FEE_OSINT_VENDOR_DIR` | `vendor/osint` | raíz de las herramientas; cada una en `<dir>/<nombre>/.venv/bin` |
 
 Validadores: si `FEE_OSINT_ENGINE_MODE=real` y falta `FEE_OSINT_ENC_KEY` o algún
@@ -530,8 +595,16 @@ Cada fase es un PR pequeño hacia `main` con aceptación observable.
 | Fase | Contenido | Aceptación |
 | --- | --- | --- |
 | **0 · Contrato + scaffolding** ✅ | `schemas.py`, migración `0002`, tablas `osint_scans`/`osint_findings`, rutas reales con datos de motores **simulados** deterministas, `merge_findings`, Exposure Score, esqueleto SSE (polling a BD), errores RFC 7807, cuotas por cuenta. Sin herramientas reales. | `202 → polling → results` verde con datos simulados; 75 pruebas; cobertura 96 %; desbloquea a Flutter |
-| **1 · Adapters de motores** ✅ | `vendor/osint/setup.sh` (un venv `uv` por herramienta; Blackbird se clona por commit, Maigret/Holehe de PyPI), `engines/process.py` (subprocess acotado, sin shell), `engines/parsers.py` (salida cruda → `Finding[]`), `engines/real.py` (`BlackbirdEngine`/`MaigretEngine`/`HoleheEngine`), `build_engines` conmuta simulado/real. | `test_parsers`/`test_process`/`test_real_engines` verdes; `test_integration_real` (opt-in, `FEE_OSINT_INTEGRATION=1`) ejecuta la cascada real y verifica corroboración entre motores. 97 pruebas + 1 integración; cobertura 95 %. La ejecución real **no** entra en CI |
+| **1 · Adapters de motores** ✅ | `vendor/osint/setup.sh` (un venv `uv` por herramienta; Blackbird se clona por commit, Maigret/Holehe/Ignorant de PyPI), `engines/process.py` (subprocess acotado, sin shell), `engines/parsers.py` (salida cruda → `Finding[]`), `engines/real.py` (`BlackbirdEngine`/`MaigretEngine`/`HoleheEngine`/`IgnorantEngine`), `build_engines` conmuta simulado/real. | `test_parsers`/`test_process`/`test_real_engines` verdes; `test_integration_real` (opt-in, `FEE_OSINT_INTEGRATION=1`) ejecuta la cascada real y verifica corroboración entre motores. 97 pruebas + 1 integración; cobertura 95 %. La ejecución real **no** entra en CI |
 | **2 · Orquestación + score** | `ScanRunner` (cascada + pivoteo real usando IDs/alias descubiertos), `--db` persistente de maigret, concurrencia por escaneo, end-to-end `torvalds` documentado | Pivoteo verificado; `test_dedup`/`test_scoring` verdes |
+
+### Fases de densificación de datos (paralelas al roadmap de motores)
+
+| Fase | Contenido | Aceptación |
+| --- | --- | --- |
+| **D1 · Capa de correlación** ✅ | `correlation.py` (grafo de identidad, timeline, contactos reconstruidos), migración `0003` (`OsintScan.correlation`), campo `correlation` en `DashboardResult`. Puro, sin red ni deps. Ver §9.5 | `test_correlation` verde; `results` incluye `correlation`; 143 pruebas; cobertura 96 % |
+| **D2 · Fuentes externas** | Have I Been Pwned (brechas), Gravatar/GitHub por email, como motores + adaptadores | contadores de brechas en `results`; degradación limpia sin API key |
+| **D3 · Síntesis con LLM** | Informe narrativo y recomendaciones priorizadas sobre los `Finding[]`, tras flag de config y consentimiento; cacheado por hash de entrada; camino sin-LLM por defecto | opcional y degradable; sin PII en logs |
 | **3 · Hardening** | Proxy, *backoff*/circuit-breaker, `purge_expired()`, cuotas por cuenta, cifrado del identificador, `DELETE` | `docs/architecture.md` y `docs/auth-contract.md`/OpenAPI al día; checklist de seguridad |
 | **4 · Opcional** | Catálogo JustDelete.me para remediación; ExifTool + vector archivos; recursión profundidad 2 | fuera del alcance comprometido |
 
@@ -587,6 +660,20 @@ Cada fase es un PR pequeño hacia `main` con aceptación observable.
   fiabilidad alta; se asume degradación (`RATE_LIMITED`) como estado de primera
   clase, no como error.
 
+### ADR-OSINT-04 · Ignorant para el vector teléfono
+
+- **Estado**: aceptado.
+- **Contexto**: faltaba cubrir el número de teléfono como identificador. Las
+  alternativas eran Ignorant (Python, técnica de *account-recovery*, mismo autor
+  que Holehe) y PhoneInfoga (Go, metadata offline + dorks).
+- **Decisión**: incorporar **Ignorant**. Encaja en el patrón vendor/venv +
+  subproceso ya establecido, no necesita API keys y devuelve presencia de cuenta
+  (el dato accionable), no solo metadata del número.
+- **Consecuencias**: +vector phone con cambio mínimo de arquitectura. −Solo 3
+  sitios (Amazon, Instagram, Snapchat) y comparte con Holehe la dependencia de
+  proxy desde cloud; al ser 3 sitios, una rotación de IP simple basta. Ignorant
+  solo imprime a stdout, así que el adaptador parsea texto en vez de un fichero.
+
 ---
 
 ## 14. Riesgos y mitigaciones
@@ -599,6 +686,8 @@ Cada fase es un PR pequeño hacia `main` con aceptación observable.
 | Herramienta vendorizada rompe al actualizar `wmn-data.json` / `data.json` | Versiones fijadas en `setup.sh` (Blackbird por commit); parsers probados con fixtures reales; `test_integration_real` antes de subir cambios |
 | Blackbird resuelve `data/` y escribe `results/`+`blackbird.log` contra el cwd/su propio directorio | El adaptador lo ejecuta con `cwd` en el repo de Blackbird, limpia `results/` antes y después, y lee el informe recién generado; escaneos concurrentes del mismo alias el mismo día se pisan (aceptable con `osint_max_concurrent_scans` bajo) |
 | Deriva del esquema de salida de una herramienta | `normalize.py` valida forma y cae a `other`/`skipped` sin romper el escaneo |
+| Ignorant solo imprime a stdout (sin JSON/CSV) y su formato puede cambiar | `parse_ignorant_output` exige forma de dominio en el token para ignorar banner y línea-leyenda; versión fijada en `setup.sh`; `test_integration_real` cubre el vector phone |
+| `catalog.split_phone` interpreta mal un número raro | Se apoya en `phonenumbers` (libphonenumber) y valida `is_valid_number`; un número no interpretable deja el motor en `error`, no aborta el escaneo |
 | PII en logs por accidente | Logger con allowlist de campos; revisión en el checklist del PR; fixtures con alias públicos |
 | Reinicio del servidor con escaneos en curso | Estado en Postgres; barrido que marca `FAILED` los `RUNNING` vencidos |
 

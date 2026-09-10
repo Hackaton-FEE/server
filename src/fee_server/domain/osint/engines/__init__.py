@@ -1,7 +1,8 @@
 """Motores OSINT: puertos, motores simulados y adaptadores reales.
 
-`build_engines` devuelve la cascada en orden (rápido → profundo → vector correo),
-simulada o real según `FEE_OSINT_ENGINE_MODE` (y siempre simulada bajo `test`).
+`build_engines` devuelve la cascada en orden (rápido → profundo → vector correo →
+vector teléfono), simulada o real según `FEE_OSINT_ENGINE_MODE` (y siempre
+simulada bajo `test`).
 """
 
 from fee_server.core.config import Settings
@@ -14,9 +15,19 @@ from fee_server.domain.osint.engines.base import (
     EngineRequest,
     EngineResult,
 )
-from fee_server.domain.osint.engines.fake import FakeBlackbird, FakeHolehe, FakeMaigret
+from fee_server.domain.osint.engines.fake import (
+    FakeBlackbird,
+    FakeHolehe,
+    FakeIgnorant,
+    FakeMaigret,
+)
 from fee_server.domain.osint.engines.process import ToolExecutionError, ToolRun, run_tool
-from fee_server.domain.osint.engines.real import BlackbirdEngine, HoleheEngine, MaigretEngine
+from fee_server.domain.osint.engines.real import (
+    BlackbirdEngine,
+    HoleheEngine,
+    IgnorantEngine,
+    MaigretEngine,
+)
 
 __all__ = [
     "ENGINE_DEGRADED",
@@ -29,8 +40,10 @@ __all__ = [
     "EngineResult",
     "FakeBlackbird",
     "FakeHolehe",
+    "FakeIgnorant",
     "FakeMaigret",
     "HoleheEngine",
+    "IgnorantEngine",
     "MaigretEngine",
     "ToolExecutionError",
     "ToolRun",
@@ -45,5 +58,6 @@ def build_engines(settings: Settings) -> tuple[Engine, ...]:
             BlackbirdEngine(settings),
             MaigretEngine(settings),
             HoleheEngine(settings),
+            IgnorantEngine(settings),
         )
-    return (FakeBlackbird(), FakeMaigret(), FakeHolehe())
+    return (FakeBlackbird(), FakeMaigret(), FakeHolehe(), FakeIgnorant())

@@ -70,6 +70,9 @@ def purge_expired(session: Session) -> int:
         session.execute(delete(OsintFinding).where(OsintFinding.scan_id == scan.id))
         scan.status = "EXPIRED"
         scan.progress = 100
+        # La correlación deriva nombres y ubicaciones de los hallazgos; se borra
+        # con ellos.
+        scan.correlation = None
         count += 1
     session.flush()
     return count

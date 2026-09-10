@@ -1,9 +1,12 @@
 # Herramientas OSINT vendorizadas
 
-El motor OSINT (`FEE_OSINT_ENGINE_MODE=real`) ejecuta tres herramientas open
+El motor OSINT (`FEE_OSINT_ENGINE_MODE=real`) ejecuta cuatro herramientas open
 source como subproceso, **cada una en su propio entorno virtual** para aislar sus
 dependencias entre sí y del servidor (ADR-OSINT-02 en
 [`docs/osint-architecture.md`](../../docs/osint-architecture.md)).
+
+Vectores: `username` → Blackbird + Maigret · `email` → Holehe · `phone` → Ignorant.
+El target type `name` se valida y persiste pero todavía no alimenta ningún motor.
 
 Este directorio versiona solo `setup.sh` y este README. Los entornos y el código
 de las herramientas se generan con `setup.sh` y están ignorados por git
@@ -21,6 +24,8 @@ vendor/osint/
     data.json               # base de sitios (opcional; se pasa con --db)
   holehe/
     .venv/bin/holehe        # consola instalada por pip
+  ignorant/
+    .venv/bin/ignorant      # consola instalada por pip (solo imprime a stdout)
 ```
 
 Las rutas se derivan de `FEE_OSINT_VENDOR_DIR` (por defecto `vendor/osint`). Si
@@ -51,7 +56,13 @@ FEE_OSINT_INTEGRATION=1 uv run --frozen pytest tests/osint/test_integration_real
 
 ejecuta la cascada real contra `torvalds` y verifica que Blackbird y Maigret
 corren, que hay >20 hallazgos y que la deduplicación cruza al menos uno entre
-motores. Tarda ~1-2 min y hace peticiones de red reales.
+motores. Tarda ~1-2 min y hace peticiones de red reales. Un segundo test
+comprueba el vector de teléfono con Ignorant.
+
+Ignorant y Holehe usan la técnica de *account-recovery* y topan rate-limit desde
+IPs de datacenter: configura `FEE_OSINT_PROXY_URL` (proxy HTTP/SOCKS) para esos
+dos motores. Ignorant solo consulta 3 sitios, así que una rotación de IP simple
+basta.
 
 Para una prueba de extremo a extremo por HTTP: levanta el servidor con
 `FEE_OSINT_ENGINE_MODE=real` y lanza un escaneo. Comprueba que

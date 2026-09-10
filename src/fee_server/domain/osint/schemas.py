@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-TARGET_TYPES = ("username", "email")
+TARGET_TYPES = ("username", "email", "name", "phone")
 
 
 class _StrictRequest(BaseModel):
@@ -63,6 +63,57 @@ class DashboardSummary(BaseModel):
     engines_run: list[str]
 
 
+class IdentityNodeModel(BaseModel):
+    id: str
+    platform: str
+    username: str | None
+    category: str
+
+
+class IdentityEdgeModel(BaseModel):
+    source: str
+    target: str
+    shared: list[str]
+    weight: int
+
+
+class IdentityGraphModel(BaseModel):
+    nodes: list[IdentityNodeModel] = Field(default_factory=list)
+    edges: list[IdentityEdgeModel] = Field(default_factory=list)
+    clusters: list[list[str]] = Field(default_factory=list)
+
+
+class TimelineEntryModel(BaseModel):
+    platform: str
+    username: str | None
+    created_at: str
+    age_years: float
+
+
+class TimelineModel(BaseModel):
+    entries: list[TimelineEntryModel] = Field(default_factory=list)
+    oldest_platform: str | None = None
+    oldest_date: str | None = None
+    newest_platform: str | None = None
+    newest_date: str | None = None
+    span_years: float = 0.0
+    dormant_old_accounts: list[str] = Field(default_factory=list)
+
+
+class ReconstructedContactModel(BaseModel):
+    kind: str
+    pattern: str
+    sources: list[str]
+    count: int
+    consistent_with_provided: bool | None = None
+
+
+class CorrelationModel(BaseModel):
+    identity_graph: IdentityGraphModel = Field(default_factory=IdentityGraphModel)
+    timeline: TimelineModel = Field(default_factory=TimelineModel)
+    reconstructed_contacts: list[ReconstructedContactModel] = Field(default_factory=list)
+
+
 class DashboardResult(BaseModel):
     scan_id: str
     generated_at: datetime
@@ -71,3 +122,4 @@ class DashboardResult(BaseModel):
     risk_level: str
     summary: DashboardSummary
     categories: list[DashboardCategory]
+    correlation: CorrelationModel | None = None

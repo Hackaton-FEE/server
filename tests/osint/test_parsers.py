@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 
 from fee_server.domain.osint.engines.parsers import (
+    IGNORANT_CONFIDENCE,
     parse_blackbird_json,
     parse_holehe_csv,
+    parse_ignorant_output,
     parse_maigret_simple_json,
 )
 from fee_server.domain.osint.findings import CONFIRMED, POTENTIAL_MATCH, RATE_LIMITED
@@ -126,3 +128,46 @@ def test_holehe_confirmed_rows_extract_masked_contacts():
     assert findings["twitter"].details["masked_phone"] == "+1********89"
     assert "caringbridge" not in findings  # exists == False
     assert findings["spotify"].status == RATE_LIMITED
+
+
+# --- Ignorant --------------------------------------------------------
+
+_IGNORANT_STDOUT = """\
+Twitter : @palenath
+*************************
+   +34 611223344
+*************************
+[+] instagram.com
+[-] amazon.com
+[x] snapchat.com
+
+[+] Phone number used, [-] Phone number not used, [x] Rate limit
+3 websites checked in 0.03 seconds
+"""
+
+
+def test_ignorant_stdout_maps_markers_to_statuses():
+    findings = {f.platform: f for f in parse_ignorant_output(_IGNORANT_STDOUT)}
+
+    assert findings["instagram"].status == CONFIRMED
+    assert findings["instagram"].confidence == IGNORANT_CONFIDENCE
+    assert findings["instagram"].category == "social"
+    assert findings["instagram"].sources == ("ignorant",)
+    assert findings["snapchat"].status == RATE_LIMITED
+    assert findings["snapchat"].confidence == 0
+    assert "amazon" not in findings  # `[-]` no usado no genera hallazgo
+    # La línea-leyenda `[+] Phone number used, [-] ...` no debe colarse.
+    assert "phone" not in findings
+    assert "rate" not in findings
+
+
+def test_ignorant_ignores_noise_and_deduplicates():
+    text = "cabecera irrelevante\n[+] instagram.com\n[+] instagram.com\n"
+
+    findings = parse_ignorant_output(text)
+
+    assert [f.platform for f in findings] == ["instagram"]
+
+
+def test_ignorant_empty_output_yields_nothing():
+    assert parse_ignorant_output("") == []

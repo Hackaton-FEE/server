@@ -13,7 +13,7 @@ from fee_server.core.config import Settings
 from fee_server.domain.osint.engines import real
 from fee_server.domain.osint.engines.base import ENGINE_SKIPPED, EngineRequest
 from fee_server.domain.osint.engines.process import ToolExecutionError, ToolRun
-from fee_server.domain.osint.findings import CONFIRMED
+from fee_server.domain.osint.findings import CONFIRMED, RATE_LIMITED
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -48,6 +48,8 @@ def test_engines_skip_when_their_input_is_absent(tmp_path):
 
     assert real.BlackbirdEngine(settings).run(EngineRequest(usernames=())).status == ENGINE_SKIPPED
     assert real.HoleheEngine(settings).run(EngineRequest(usernames=("x",))).status == ENGINE_SKIPPED
+    ignorant_skip = real.IgnorantEngine(settings).run(EngineRequest(usernames=("x",)))
+    assert ignorant_skip.status == ENGINE_SKIPPED
 
 
 def test_blackbird_engine_parses_the_generated_report(tmp_path, monkeypatch):
@@ -111,3 +113,55 @@ def test_holehe_engine_parses_the_generated_csv(tmp_path, monkeypatch):
     platforms = {f.platform: f for f in result.findings}
     assert platforms["imgur"].status == CONFIRMED
     assert platforms["lastpass"].details["masked_email"] == "jo****@gmail.com"
+
+
+def test_ignorant_engine_parses_stdout(tmp_path, monkeypatch):
+    _install_stub_tool(tmp_path, "ignorant", "ignorant")
+    settings = _real_settings(str(tmp_path))
+
+    def fake_run_tool(argv, **_kwargs):
+        assert argv[1:3] == ["34", "611223344"]  # +34 611223344 dividido por split_phone
+        return ToolRun(
+            0, "[+] instagram.com\n[x] amazon.com\n", "", timed_out=False, truncated=False
+        )
+
+    monkeypatch.setattr(real, "run_tool", fake_run_tool)
+
+    result = real.IgnorantEngine(settings).run(
+        EngineRequest(usernames=(), phone="+34611223344")
+    )
+
+    platforms = {f.platform: f for f in result.findings}
+    assert platforms["instagram"].status == CONFIRMED
+    assert platforms["amazon"].status == RATE_LIMITED
+    assert result.status == "degraded"
+
+
+def test_ignorant_engine_reports_ok_when_no_account_is_linked(tmp_path, monkeypatch):
+    _install_stub_tool(tmp_path, "ignorant", "ignorant")
+    settings = _real_settings(str(tmp_path))
+    monkeypatch.setattr(
+        real,
+        "run_tool",
+        lambda *a, **k: ToolRun(
+            0, "3 websites checked in 0.1 seconds\n", "", timed_out=False, truncated=False
+        ),
+    )
+
+    result = real.IgnorantEngine(settings).run(EngineRequest(usernames=(), phone="+34611223344"))
+
+    assert result.status == "ok"
+    assert result.findings == ()
+
+
+def test_ignorant_engine_errors_when_the_tool_did_not_run(tmp_path, monkeypatch):
+    _install_stub_tool(tmp_path, "ignorant", "ignorant")
+    settings = _real_settings(str(tmp_path))
+    monkeypatch.setattr(
+        real, "run_tool", lambda *a, **k: ToolRun(1, "", "boom", timed_out=False, truncated=False)
+    )
+
+    result = real.IgnorantEngine(settings).run(EngineRequest(usernames=(), phone="+34611223344"))
+
+    assert result.status == "error"
+    assert result.error_category == "no-output"

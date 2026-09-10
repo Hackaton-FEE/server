@@ -13,7 +13,7 @@ from fee_server.domain.osint.findings import (
 )
 
 # Prioridad al fusionar `details`: el motor más profundo gana ante un conflicto.
-_ENGINE_DEPTH = {"maigret": 3, "blackbird": 2, "holehe": 1}
+_ENGINE_DEPTH = {"maigret": 3, "blackbird": 2, "holehe": 1, "ignorant": 1}
 
 
 def normalize(finding: Finding) -> Finding:

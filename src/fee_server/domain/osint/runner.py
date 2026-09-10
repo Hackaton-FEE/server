@@ -12,6 +12,7 @@ from fee_server.core.config import Settings
 from fee_server.db.models import OsintScan
 from fee_server.db.session import session_scope
 from fee_server.domain.osint import repository
+from fee_server.domain.osint.correlation import correlate
 from fee_server.domain.osint.engines import (
     ENGINE_ERROR,
     EngineRequest,
@@ -63,9 +64,15 @@ def run_scan(*, scan_id: str, engine_request: EngineRequest, settings: Settings)
             }
         _checkpoint(scan_id, progress=min(90, index * step), engines=engine_state)
 
-    merged = merge_findings(all_findings)
-    score = exposure_score(merged)
-    _complete(scan_id, merged, score, engine_state)
+    try:
+        merged = merge_findings(all_findings)
+        score = exposure_score(merged)
+        correlation = correlate(merged, provided_email=engine_request.email).to_dict()
+    except Exception:  # noqa: BLE001 - la normalización no debe dejar el escaneo colgado
+        logger.exception("osint scan %s: fallo al consolidar resultados", scan_id)
+        _fail(scan_id, "result-consolidation-failed")
+        return
+    _complete(scan_id, merged, score, engine_state, correlation)
 
 
 def _mark_running(scan_id: str) -> bool:
@@ -86,7 +93,9 @@ def _checkpoint(scan_id: str, *, progress: int, engines: dict) -> None:
         scan.engines = dict(engines)
 
 
-def _complete(scan_id: str, findings: list, score: int, engines: dict) -> None:
+def _complete(
+    scan_id: str, findings: list, score: int, engines: dict, correlation: dict
+) -> None:
     with session_scope() as session:
         scan = repository.get_scan(session, scan_id)
         if scan is None or scan.status in TERMINAL_STATUSES:
@@ -97,6 +106,7 @@ def _complete(scan_id: str, findings: list, score: int, engines: dict) -> None:
         scan.exposure_score = score
         scan.risk_level = risk_level(score)
         scan.engines = dict(engines)
+        scan.correlation = correlation
         scan.completed_at = utcnow()
 
 

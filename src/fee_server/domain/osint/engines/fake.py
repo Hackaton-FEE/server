@@ -139,3 +139,34 @@ class FakeHolehe:
             ),
         )
         return EngineResult(self.name, ENGINE_DEGRADED, findings)
+
+
+class FakeIgnorant:
+    name = "ignorant"
+
+    def run(self, request: EngineRequest) -> EngineResult:
+        if not request.phone:
+            return EngineResult(self.name, ENGINE_SKIPPED)
+        findings = (
+            Finding(
+                platform="Instagram",
+                category="social",
+                url=None,
+                username=None,
+                status=CONFIRMED,
+                confidence=70,
+                sources=("ignorant",),
+                details={},
+            ),
+            Finding(
+                platform="Amazon",
+                category="other",
+                url=None,
+                username=None,
+                status=RATE_LIMITED,
+                confidence=0,
+                sources=("ignorant",),
+                details={},
+            ),
+        )
+        return EngineResult(self.name, ENGINE_DEGRADED, findings)

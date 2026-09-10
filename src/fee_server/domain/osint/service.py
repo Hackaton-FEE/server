@@ -16,10 +16,11 @@ from fee_server.core.problem import (
 from fee_server.db.models import OsintScan, User
 from fee_server.domain.osint import repository
 from fee_server.domain.osint.catalog import is_valid_identifier
-from fee_server.domain.osint.engines import EngineRequest
+from fee_server.domain.osint.engines import EngineRequest, build_engines
 from fee_server.domain.osint.findings import Finding
 from fee_server.domain.osint.schemas import (
     TARGET_TYPES,
+    CorrelationModel,
     DashboardResult,
     ScanRequest,
     ScanStatusResponse,
@@ -83,13 +84,17 @@ class ScanService:
     def _engine_request(self, request: ScanRequest) -> EngineRequest:
         usernames: list[str] = list(request.associated_usernames)
         email = request.associated_email
+        phone: str | None = None
         if request.target_type == "username":
             usernames.insert(0, request.identifier)
-        else:
+        elif request.target_type == "email":
             email = request.identifier
+        elif request.target_type == "phone":
+            phone = request.identifier
+        # `name` todavía no alimenta ningún motor; se persiste el hash del escaneo.
         # Sin duplicados, preservando el orden.
         ordered = tuple(dict.fromkeys(usernames))
-        return EngineRequest(usernames=ordered, email=email)
+        return EngineRequest(usernames=ordered, email=email, phone=phone)
 
     # --- consulta --------------------------------------------------------
 
@@ -103,7 +108,11 @@ class ScanService:
         engines = scan.engines or {}
         completed = [name for name, state in engines.items() if state.get("finished_at")]
         running = (
-            [name for name in ("blackbird", "maigret", "holehe") if name not in completed]
+            [
+                engine.name
+                for engine in build_engines(self._settings)
+                if engine.name not in completed
+            ]
             if scan.status == "RUNNING"
             else []
         )
@@ -137,12 +146,16 @@ class ScanService:
         engines_run = [
             name for name, state in (scan.engines or {}).items() if state.get("finished_at")
         ]
+        correlation = (
+            CorrelationModel.model_validate(scan.correlation) if scan.correlation else None
+        )
         return build_dashboard(
             scan_id=scan.id,
             findings=findings,
             engines_run=engines_run,
             score=scan.exposure_score or 0,
             partial=scan.status not in _TERMINAL,
+            correlation=correlation,
         )
 
     # --- borrado y limpieza --------------------------------------------

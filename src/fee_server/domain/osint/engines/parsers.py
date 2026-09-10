@@ -25,6 +25,19 @@ MAIGRET_WITH_IDS = 95
 MAIGRET_WITHOUT_IDS = 85
 MAIGRET_SIMILAR = 50
 HOLEHE_CONFIDENCE = 75
+IGNORANT_CONFIDENCE = 70
+
+# Ignorant solo cubre Amazon, Instagram y Snapchat; su categoría es conocida.
+_IGNORANT_CATEGORY: Mapping[str, str] = {
+    "instagram": "social",
+    "snapchat": "social",
+    "amazon": "other",
+}
+# Línea de resultado de Ignorant con `--no-color`: `[+] instagram.com`,
+# `[-] amazon.com` (no usado) o `[x] snapchat.com` (rate-limit). El token debe
+# tener forma de dominio para no confundir la línea-leyenda que también empieza
+# por `[+] Phone number used, [-] ...`.
+_IGNORANT_LINE = re.compile(r"^\s*\[([+\-x])\]\s+([a-z0-9.-]+\.[a-z]{2,})\b", re.IGNORECASE)
 
 _MAIGRET_ID_MAP = {
     "uid": "account_id",
@@ -164,6 +177,46 @@ def _holehe_details(row: Mapping[str, str]) -> dict[str, object]:
     if phone:
         details["masked_phone"] = phone
     return details
+
+
+# --- Ignorant ----------------------------------------------------------
+
+
+def _ignorant_platform(domain: str) -> str:
+    return domain.split(".", 1)[0].strip().lower()
+
+
+def parse_ignorant_output(text: str) -> list[Finding]:
+    """Parsea el stdout de Ignorant (no genera fichero; solo imprime)."""
+    findings: list[Finding] = []
+    seen: set[str] = set()
+    for line in text.splitlines():
+        match = _IGNORANT_LINE.match(line)
+        if match is None:
+            continue
+        marker, domain = match.group(1), match.group(2)
+        platform = _ignorant_platform(domain)
+        if not platform or platform in seen:
+            continue
+        seen.add(platform)
+        if marker == "x":
+            findings.append(
+                Finding(platform, "other", None, None, RATE_LIMITED, 0, ("ignorant",), {})
+            )
+        elif marker == "+":
+            findings.append(
+                Finding(
+                    platform,
+                    _IGNORANT_CATEGORY.get(platform, "other"),
+                    None,
+                    None,
+                    CONFIRMED,
+                    IGNORANT_CONFIDENCE,
+                    ("ignorant",),
+                    {},
+                )
+            )
+    return findings
 
 
 def parse_holehe_csv(text: str) -> list[Finding]:

@@ -7,12 +7,19 @@ o se sustituirá por el catálogo de WhatsMyName.
 import re
 from typing import Final
 
+import phonenumbers
+
 from fee_server.domain.osint.findings import CATEGORIES
 
 # username: letras, dígitos y `._-`; 2 a 64.
 _USERNAME_RE: Final = re.compile(r"^[A-Za-z0-9._-]{2,64}$")
 # email: validación pragmática, no un parser RFC 5322 completo.
 _EMAIL_RE: Final = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}\.[A-Za-z]{2,}$")
+# name: nombre completo. Empieza por letra (Unicode, admite acentos) y admite
+# además espacios, punto, apóstrofo y guion. 2 a 80 caracteres.
+_NAME_RE: Final = re.compile(r"^[^\W\d_](?:[^\W\d_]|[ .'\-]){1,79}$", re.UNICODE)
+# phone: E.164 (`+` seguido de 8 a 15 dígitos, el primero no cero).
+_PHONE_RE: Final = re.compile(r"^\+[1-9]\d{7,14}$")
 
 # Nombre canónico por clave normalizada (minúsculas, sin separadores).
 _PLATFORM_CANONICAL: Final[dict[str, str]] = {
@@ -67,7 +74,27 @@ def is_valid_identifier(target_type: str, identifier: str) -> bool:
         return bool(_USERNAME_RE.match(identifier))
     if target_type == "email":
         return bool(_EMAIL_RE.match(identifier))
+    if target_type == "name":
+        return bool(_NAME_RE.match(identifier))
+    if target_type == "phone":
+        return bool(_PHONE_RE.match(identifier))
     return False
+
+
+def split_phone(e164: str) -> tuple[str, str]:
+    """Divide un número E.164 en (código de país, número nacional).
+
+    Se apoya en `phonenumbers` (port de libphonenumber de Google): el prefijo de
+    país tiene entre 1 y 3 dígitos sin regla algorítmica, así que un split casero
+    sería frágil. Lanza `ValueError` si el número no es interpretable.
+    """
+    try:
+        parsed = phonenumbers.parse(e164, None)
+    except phonenumbers.NumberParseException as exc:  # pragma: no cover - regex ya validó forma
+        raise ValueError(f"número de teléfono no interpretable: {exc}") from exc
+    if not phonenumbers.is_valid_number(parsed):
+        raise ValueError("número de teléfono no válido")
+    return str(parsed.country_code), str(parsed.national_number)
 
 
 def canonical_platform(name: str) -> str:

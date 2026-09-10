@@ -11,6 +11,7 @@ from datetime import datetime
 from fee_server.domain.osint.catalog import category_color
 from fee_server.domain.osint.findings import CONFIRMED, POTENTIAL_MATCH, RATE_LIMITED, Finding
 from fee_server.domain.osint.schemas import (
+    CorrelationModel,
     DashboardCategory,
     DashboardResult,
     DashboardSummary,
@@ -118,6 +119,7 @@ def build_dashboard(
     engines_run: Sequence[str],
     score: int,
     partial: bool,
+    correlation: CorrelationModel | None = None,
     generated_at: datetime | None = None,
 ) -> DashboardResult:
     return DashboardResult(
@@ -128,4 +130,5 @@ def build_dashboard(
         risk_level=risk_level(score),
         summary=_summary(findings, engines_run),
         categories=_categories(findings),
+        correlation=correlation,
     )

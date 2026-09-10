@@ -35,7 +35,7 @@ class _BoomEngine:
 def test_build_engines_uses_fake_engines_by_default():
     engines = engines_module.build_engines(Settings(environment="test"))
 
-    assert [engine.name for engine in engines] == ["blackbird", "maigret", "holehe"]
+    assert [engine.name for engine in engines] == ["blackbird", "maigret", "holehe", "ignorant"]
     assert all(type(engine).__name__.startswith("Fake") for engine in engines)
 
 
@@ -48,7 +48,7 @@ def test_build_engines_returns_real_adapters_in_real_mode():
 
     engines = engines_module.build_engines(real)
 
-    assert [engine.name for engine in engines] == ["blackbird", "maigret", "holehe"]
+    assert [engine.name for engine in engines] == ["blackbird", "maigret", "holehe", "ignorant"]
     assert isinstance(engines[0], engines_module.BlackbirdEngine)
 
 
@@ -66,6 +66,44 @@ def test_a_failing_engine_does_not_abort_the_scan(client, settings, monkeypatch)
         scan = session.get(OsintScan, scan_id)
         assert scan.status == "COMPLETED"
         assert scan.engines["maigret"]["status"] == ENGINE_ERROR
+
+
+def test_completed_scan_stores_a_correlation(client, settings, monkeypatch):
+    scan_id = _make_scan(settings)
+    monkeypatch.setattr(runner, "build_engines", lambda _s: engines_module.build_engines(settings))
+
+    runner.run_scan(
+        scan_id=scan_id,
+        engine_request=EngineRequest(usernames=("alias_de_prueba",)),
+        settings=settings,
+    )
+
+    with session_scope() as session:
+        scan = session.get(OsintScan, scan_id)
+        assert scan.status == "COMPLETED"
+        assert scan.correlation["identity_graph"]["nodes"]
+        assert "timeline" in scan.correlation
+
+
+def test_scan_fails_when_result_consolidation_raises(client, settings, monkeypatch):
+    scan_id = _make_scan(settings)
+    monkeypatch.setattr(runner, "build_engines", lambda _s: engines_module.build_engines(settings))
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("normalización rota")
+
+    monkeypatch.setattr(runner, "correlate", _boom)
+
+    runner.run_scan(
+        scan_id=scan_id,
+        engine_request=EngineRequest(usernames=("alias_de_prueba",)),
+        settings=settings,
+    )
+
+    with session_scope() as session:
+        scan = session.get(OsintScan, scan_id)
+        assert scan.status == "FAILED"
+        assert scan.completed_at is not None
 
 
 def test_scan_fails_when_engines_are_unavailable(client, settings, monkeypatch):

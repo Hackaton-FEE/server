@@ -16,6 +16,7 @@ ENGINE_SKIPPED = "skipped"
 class EngineRequest:
     usernames: tuple[str, ...]
     email: str | None = None
+    phone: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

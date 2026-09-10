@@ -49,6 +49,8 @@ def test_real_cascade_discovers_and_corroborates_a_public_alias():
     assert statuses["maigret"] == "ok"
     # Holehe sin proxy residencial casi siempre queda "degraded".
     assert statuses["holehe"] in {"ok", "degraded", "skipped"}
+    # Ignorant es el vector de teléfono: sin `phone` en la petición se omite.
+    assert statuses["ignorant"] == "skipped"
 
     merged = merge_findings(all_findings)
     assert len(merged) > 20
@@ -57,3 +59,14 @@ def test_real_cascade_discovers_and_corroborates_a_public_alias():
     assert corroborated, "la deduplicación entre motores no cruzó ningún hallazgo"
 
     assert 0 <= exposure_score(merged) <= 100
+
+
+def test_real_phone_vector_runs_ignorant():
+    from fee_server.domain.osint.engines.real import IgnorantEngine
+
+    engine = IgnorantEngine(_real_settings())
+    # Número de ejemplo del propio proyecto Ignorant; sin proxy suele dar rate-limit.
+    result = engine.run(EngineRequest(usernames=(), phone="+33644637111"))
+
+    assert result.status in {"ok", "degraded"}
+    assert {f.platform for f in result.findings} <= {"amazon", "instagram", "snapchat"}

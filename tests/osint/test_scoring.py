@@ -3,6 +3,7 @@
 import pytest
 
 from fee_server.domain.osint.findings import CONFIRMED, POTENTIAL_MATCH, RATE_LIMITED, Finding
+from fee_server.domain.osint.schemas import CorrelationModel
 from fee_server.domain.osint.scoring import build_dashboard, exposure_score, risk_level
 
 
@@ -73,3 +74,33 @@ def test_build_dashboard_groups_categories_and_counts():
     assert dashboard.summary.platforms_found == 3
     assert dashboard.summary.potential_matches == 1
     assert dashboard.summary.rate_limited == 1
+
+
+def test_build_dashboard_propagates_correlation():
+    correlation = CorrelationModel.model_validate(
+        {"timeline": {"oldest_platform": "GitHub", "span_years": 12.0}}
+    )
+
+    dashboard = build_dashboard(
+        scan_id="s1",
+        findings=[_confirmed("GitHub", "coding")],
+        engines_run=["maigret"],
+        score=30,
+        partial=False,
+        correlation=correlation,
+    )
+
+    assert dashboard.correlation is not None
+    assert dashboard.correlation.timeline.oldest_platform == "GitHub"
+
+
+def test_build_dashboard_correlation_defaults_to_none():
+    dashboard = build_dashboard(
+        scan_id="s1",
+        findings=[_confirmed("GitHub", "coding")],
+        engines_run=["maigret"],
+        score=30,
+        partial=False,
+    )
+
+    assert dashboard.correlation is None
