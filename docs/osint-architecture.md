@@ -489,7 +489,7 @@ poco / nada en el score.
 | `FEE_OSINT_ENC_KEY` | vacío | clave AES-GCM para el identificador; obligatoria si `mode=real` |
 | `FEE_OSINT_RETENTION_DAYS` | `7` | caducidad de escaneos |
 | `FEE_OSINT_MAX_CONCURRENT_SCANS` | `2` | escaneos simultáneos por instancia |
-| `FEE_OSINT_ENGINE_TIMEOUT_SECONDS` | `120` | timeout por motor |
+| `FEE_OSINT_ENGINE_TIMEOUT_SECONDS` | `120` | presupuesto de reloj de pared por motor (Maigret ×3); el timeout por petición HTTP es fijo (15 s) |
 | `FEE_OSINT_MAX_OUTPUT_BYTES` | `5_000_000` | cap de stdout por subproceso |
 | `FEE_OSINT_PROXY_URL` | vacío | proxy HTTP/SOCKS para las herramientas |
 | `FEE_OSINT_VENDOR_DIR` | `vendor/osint` | raíz de las herramientas; cada una en `<dir>/<nombre>/.venv/bin` |
@@ -530,7 +530,7 @@ Cada fase es un PR pequeño hacia `main` con aceptación observable.
 | Fase | Contenido | Aceptación |
 | --- | --- | --- |
 | **0 · Contrato + scaffolding** ✅ | `schemas.py`, migración `0002`, tablas `osint_scans`/`osint_findings`, rutas reales con datos de motores **simulados** deterministas, `merge_findings`, Exposure Score, esqueleto SSE (polling a BD), errores RFC 7807, cuotas por cuenta. Sin herramientas reales. | `202 → polling → results` verde con datos simulados; 75 pruebas; cobertura 96 %; desbloquea a Flutter |
-| **1 · Adapters de motores** ✅ | `vendor/osint/setup.sh` (un venv `uv` por herramienta), `engines/process.py` (subprocess acotado, sin shell), `engines/parsers.py` (salida cruda → `Finding[]`), `engines/real.py` (`BlackbirdEngine`/`MaigretEngine`/`HoleheEngine`), `build_engines` conmuta simulado/real. Parsers probados contra capturas reales de `osint_lab/test_runs/`. | `test_parsers`/`test_process`/`test_real_engines` verdes; 100 pruebas; cobertura 94 %. Ejecución real = validación manual (no CI) |
+| **1 · Adapters de motores** ✅ | `vendor/osint/setup.sh` (un venv `uv` por herramienta; Blackbird se clona por commit, Maigret/Holehe de PyPI), `engines/process.py` (subprocess acotado, sin shell), `engines/parsers.py` (salida cruda → `Finding[]`), `engines/real.py` (`BlackbirdEngine`/`MaigretEngine`/`HoleheEngine`), `build_engines` conmuta simulado/real. | `test_parsers`/`test_process`/`test_real_engines` verdes; `test_integration_real` (opt-in, `FEE_OSINT_INTEGRATION=1`) ejecuta la cascada real y verifica corroboración entre motores. 97 pruebas + 1 integración; cobertura 95 %. La ejecución real **no** entra en CI |
 | **2 · Orquestación + score** | `ScanRunner` (cascada + pivoteo real usando IDs/alias descubiertos), `--db` persistente de maigret, concurrencia por escaneo, end-to-end `torvalds` documentado | Pivoteo verificado; `test_dedup`/`test_scoring` verdes |
 | **3 · Hardening** | Proxy, *backoff*/circuit-breaker, `purge_expired()`, cuotas por cuenta, cifrado del identificador, `DELETE` | `docs/architecture.md` y `docs/auth-contract.md`/OpenAPI al día; checklist de seguridad |
 | **4 · Opcional** | Catálogo JustDelete.me para remediación; ExifTool + vector archivos; recursión profundidad 2 | fuera del alcance comprometido |
@@ -596,7 +596,8 @@ Cada fase es un PR pequeño hacia `main` con aceptación observable.
 | Sitios bloquean por *rate-limit* / Cloudflare | `RATE_LIMITED` como estado; `FEE_OSINT_PROXY_URL`; concurrencia por motor limitada por flags |
 | Un escaneo pesado bloquea el event loop | Semáforo de escaneos, `timeout` por motor, subprocesos (no en el loop) |
 | Falsos positivos entre motores | `POTENTIAL_MATCH` separado; bonificación de confianza solo con corroboración independiente |
-| Herramienta vendorizada rompe al actualizar `wmn-data.json` / `data.json` | Fijar commit del subtree; test de humo del parser con fixture; actualización manual revisada |
+| Herramienta vendorizada rompe al actualizar `wmn-data.json` / `data.json` | Versiones fijadas en `setup.sh` (Blackbird por commit); parsers probados con fixtures reales; `test_integration_real` antes de subir cambios |
+| Blackbird resuelve `data/` y escribe `results/`+`blackbird.log` contra el cwd/su propio directorio | El adaptador lo ejecuta con `cwd` en el repo de Blackbird, limpia `results/` antes y después, y lee el informe recién generado; escaneos concurrentes del mismo alias el mismo día se pisan (aceptable con `osint_max_concurrent_scans` bajo) |
 | Deriva del esquema de salida de una herramienta | `normalize.py` valida forma y cae a `other`/`skipped` sin romper el escaneo |
 | PII en logs por accidente | Logger con allowlist de campos; revisión en el checklist del PR; fixtures con alias públicos |
 | Reinicio del servidor con escaneos en curso | Estado en Postgres; barrido que marca `FAILED` los `RUNNING` vencidos |

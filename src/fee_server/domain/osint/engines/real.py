@@ -9,6 +9,7 @@ escaneo.
 
 import contextlib
 import os
+import shutil
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -31,14 +32,24 @@ from fee_server.domain.osint.engines.parsers import (
 from fee_server.domain.osint.engines.process import ToolExecutionError, run_tool
 from fee_server.domain.osint.findings import RATE_LIMITED, Finding
 
-_TIMEOUT_MARGIN_SECONDS = 15
-_DEEP_TIMEOUT_FACTOR = 3
-_MAX_CONCURRENCY = "15"
+# `osint_engine_timeout_seconds` es el presupuesto de reloj de pared por motor.
+# El timeout por petición HTTP es un valor pequeño y fijo.
+_PER_REQUEST_TIMEOUT = "15"
+# Maigret parsea páginas completas (socid-extractor): necesita más margen.
+_MAIGRET_BUDGET_FACTOR = 3
+_BLACKBIRD_CONCURRENCY = "30"
 
 
 def _newest(directory: str, pattern: str) -> Path | None:
-    matches = sorted(Path(directory).glob(f"**/{pattern}"), key=os.path.getmtime)
+    root = Path(directory)
+    if not root.exists():
+        return None
+    matches = sorted(root.glob(f"**/{pattern}"), key=os.path.getmtime)
     return matches[-1] if matches else None
+
+
+def _rmtree(path: Path) -> None:
+    shutil.rmtree(path, ignore_errors=True)
 
 
 @contextlib.contextmanager
@@ -70,7 +81,10 @@ class _RealEngine:
     def _require(self, path: Path) -> Path:
         if not path.exists():
             raise ToolExecutionError(f"herramienta OSINT no encontrada: {self.name}")
-        return path
+        # Absoluta (el subproceso corre con cwd en un tmpdir) pero SIN resolver
+        # symlinks: el `python` de un venv uv es un enlace al intérprete base y
+        # resolverlo rompe la detección del venv (pyvenv.cfg).
+        return path.absolute()
 
     @staticmethod
     def _safe_username(username: str) -> str:
@@ -94,8 +108,16 @@ class BlackbirdEngine(_RealEngine):
         if not request.usernames:
             return EngineResult(self.name, ENGINE_SKIPPED)
 
-        python = self._require(self._vendor / "blackbird" / ".venv" / "bin" / "python")
-        script = self._require(self._vendor / "blackbird" / "blackbird.py")
+        root = self._require(self._vendor / "blackbird").absolute()
+        python = self._require(root / ".venv" / "bin" / "python")
+        script = self._require(root / "blackbird.py")
+        # Blackbird resuelve `data/` y `blackbird.log` contra el cwd y escribe el
+        # informe en `<repo>/results/`; por eso se ejecuta con cwd en su propio
+        # directorio. Con escaneos concurrentes del mismo alias el mismo día,
+        # blackbird sobrescribe su informe (limitación conocida, aceptable con
+        # `osint_max_concurrent_scans` bajo).
+        results_dir = root / "results"
+        _rmtree(results_dir)
 
         findings: list[Finding] = []
         degraded = False
@@ -109,26 +131,26 @@ class BlackbirdEngine(_RealEngine):
                 "--json",
                 "--no-update",
                 "--timeout",
-                str(self._timeout),
+                _PER_REQUEST_TIMEOUT,
                 "--max-concurrent-requests",
-                _MAX_CONCURRENCY,
+                _BLACKBIRD_CONCURRENCY,
             ]
             if self._proxy:
                 argv += ["--proxy", self._proxy]
 
-            with _workdir() as work:
-                run_tool(
-                    argv,
-                    timeout=self._timeout + _TIMEOUT_MARGIN_SECONDS,
-                    max_output_bytes=self._max_bytes,
-                    proxy_url=self._proxy,
-                    cwd=work,
-                )
-                report = _newest(work, "*_blackbird.json")
-                if report is None:
-                    degraded = True
-                    continue
-                findings += parse_blackbird_json(report.read_text("utf-8"), username=username)
+            run_tool(
+                argv,
+                timeout=self._timeout,
+                max_output_bytes=self._max_bytes,
+                proxy_url=self._proxy,
+                cwd=str(root),
+            )
+            report = _newest(str(results_dir), "*_blackbird.json")
+            if report is None:
+                degraded = True
+                continue
+            findings += parse_blackbird_json(report.read_text("utf-8"), username=username)
+            _rmtree(report.parent)
 
         return EngineResult(self.name, ENGINE_DEGRADED if degraded else ENGINE_OK, tuple(findings))
 
@@ -156,7 +178,7 @@ class MaigretEngine(_RealEngine):
                     "--no-recursion",
                     "--no-autoupdate",
                     "--timeout",
-                    str(self._timeout),
+                    _PER_REQUEST_TIMEOUT,
                     "-fo",
                     work,
                 ]
@@ -167,7 +189,7 @@ class MaigretEngine(_RealEngine):
 
                 run_tool(
                     argv,
-                    timeout=self._timeout * _DEEP_TIMEOUT_FACTOR,
+                    timeout=self._timeout * _MAIGRET_BUDGET_FACTOR,
                     max_output_bytes=self._max_bytes,
                     proxy_url=self._proxy,
                     cwd=work,
@@ -199,11 +221,11 @@ class HoleheEngine(_RealEngine):
                 "--no-clear",
                 "-C",
                 "-T",
-                str(self._timeout),
+                _PER_REQUEST_TIMEOUT,
             ]
             run_tool(
                 argv,
-                timeout=self._timeout * _DEEP_TIMEOUT_FACTOR,
+                timeout=self._timeout,
                 max_output_bytes=self._max_bytes,
                 proxy_url=self._proxy,
                 cwd=work,

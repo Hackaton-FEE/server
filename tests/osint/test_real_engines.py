@@ -56,9 +56,10 @@ def test_blackbird_engine_parses_the_generated_report(tmp_path, monkeypatch):
     fixture = (FIXTURES / "blackbird_testuser12345.json").read_text("utf-8")
 
     def fake_run_tool(argv, *, cwd, **_kwargs):
-        report_dir = Path(cwd) / "testuser12345_run"
+        # Blackbird escribe el informe en `<cwd>/results/<user>_<fecha>_blackbird/`.
+        report_dir = Path(cwd) / "results" / "testuser12345_09_10_2026_blackbird"
         report_dir.mkdir(parents=True, exist_ok=True)
-        (report_dir / "testuser12345_blackbird.json").write_text(fixture)
+        (report_dir / "testuser12345_09_10_2026_blackbird.json").write_text(fixture)
         return ToolRun(0, "", "", timed_out=False, truncated=False)
 
     monkeypatch.setattr(real, "run_tool", fake_run_tool)
@@ -68,6 +69,10 @@ def test_blackbird_engine_parses_the_generated_report(tmp_path, monkeypatch):
     assert result.findings
     assert any(f.platform == "GitLab" for f in result.findings)
     assert all(f.username == "testuser12345" for f in result.findings)
+    # El adaptador limpia el informe tras leerlo.
+    assert not (tmp_path / "blackbird" / "results").exists() or not list(
+        (tmp_path / "blackbird" / "results").iterdir()
+    )
 
 
 def test_maigret_engine_parses_the_generated_report(tmp_path, monkeypatch):

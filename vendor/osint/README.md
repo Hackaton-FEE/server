@@ -33,17 +33,29 @@ demás.
 ./vendor/osint/setup.sh
 ```
 
-Necesita red (PyPI y GitHub) y `uv`. Fija versiones en el propio script; para
-actualizar una herramienta, cambia su versión ahí y vuelve a ejecutarlo.
+Necesita red (PyPI y GitHub) y `uv`; tarda ~1 min la primera vez. Fija versiones
+en el propio script (Blackbird por commit de `main`, ya que no publica tags);
+para actualizar una herramienta, cambia su versión ahí y vuelve a ejecutarlo. El
+script además descarga `blackbird/data/wmn-data.json` (la lista de sitios), que
+el adaptador usa en tiempo de ejecución con `--no-update`.
 
 ## Validación manual del modo real
 
 El modo `real` no entra en CI. Tras `setup.sh`:
 
-Levanta el servidor con `FEE_OSINT_ENGINE_MODE=real` y lanza un escaneo de un
-alias público (p. ej. `torvalds`) por la API. Comprueba que:
+Tras `setup.sh`:
 
-- `results.summary.engines_run` incluye `blackbird`, `maigret` y `holehe`;
-- hay hallazgos `CONFIRMED` con `sources` de más de un motor;
-- los logs no contienen el identificador, URLs de perfiles ni el contenido de
-  `details` (solo `scan_id`, nombre de motor y contadores).
+```sh
+FEE_OSINT_INTEGRATION=1 uv run --frozen pytest tests/osint/test_integration_real.py --no-cov
+```
+
+ejecuta la cascada real contra `torvalds` y verifica que Blackbird y Maigret
+corren, que hay >20 hallazgos y que la deduplicación cruza al menos uno entre
+motores. Tarda ~1-2 min y hace peticiones de red reales.
+
+Para una prueba de extremo a extremo por HTTP: levanta el servidor con
+`FEE_OSINT_ENGINE_MODE=real` y lanza un escaneo. Comprueba que
+`results.summary.engines_run` incluye los motores, que hay `CONFIRMED` con
+`sources` de más de un motor, y que los logs no contienen el identificador,
+URLs de perfiles ni el contenido de `details` (solo `scan_id`, motor y
+contadores).
