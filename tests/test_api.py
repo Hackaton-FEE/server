@@ -53,6 +53,8 @@ def test_production_hides_docs_and_preserves_health(monkeypatch, tmp_path):
     monkeypatch.setenv("FEE_ENVIRONMENT", "production")
     monkeypatch.setenv("FEE_JWT_SECRET", "a-proper-production-secret-value-32chars")
     monkeypatch.setenv("FEE_DATABASE_URL", f"sqlite:///{tmp_path / 'prod.db'}")
+    monkeypatch.setenv("FEE_RATE_LIMIT_ENABLED", "1")
+    monkeypatch.setenv("FEE_VERIFICATION_STATIC_CODE", "")
 
     from fee_server.db.base import Base
     from fee_server.db.session import get_engine

@@ -13,7 +13,7 @@ class NvidiaAssistantGateway:
     def __init__(self, settings: Settings) -> None:
         self._client = AsyncOpenAI(
             base_url=settings.assistant_base_url,
-            api_key=settings.assistant_api_key,
+            api_key=settings.assistant_api_key.get_secret_value(),
             timeout=settings.assistant_timeout_seconds,
         )
         self._model = settings.assistant_model

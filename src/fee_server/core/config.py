@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     # --- Transporte ---
     cors_origins: tuple[str, ...] = ()
     max_request_body_bytes: int = 16_384
+    # Debe coincidir con `FEE_RATE_LIMIT_ENABLED` (mismo nombre de variable),
+    # que además construye el `Limiter` de verdad en `core/rate_limit.py`. Este
+    # campo solo existe para que un arranque en producción sin límites por IP
+    # falle rápido en vez de exponer todos los endpoints sin cuota.
+    rate_limit_enabled: bool = False
 
     # --- Motor OSINT (huella digital) ---
     # `fake`: motores simulados con salidas deterministas; no tocan la red.
@@ -71,7 +76,7 @@ class Settings(BaseSettings):
     # `fake`: respuesta determinista sin red; `real`: proveedor compatible con
     # la API de OpenAI (NVIDIA por defecto). Ver `domain/assistant/`.
     assistant_mode: Literal["fake", "real"] = "fake"
-    assistant_api_key: str = ""
+    assistant_api_key: SecretStr = SecretStr("")
     assistant_base_url: str = "https://integrate.api.nvidia.com/v1"
     assistant_model: str = "meta/muse-glimmer-30b"
     assistant_max_messages: int = 20
@@ -141,9 +146,30 @@ class Settings(BaseSettings):
         if (
             self.environment == "production"
             and self.assistant_mode == "real"
-            and not self.assistant_api_key
+            and not self.assistant_api_key.get_secret_value()
         ):
             raise ValueError(
                 "Define FEE_ASSISTANT_API_KEY para usar FEE_ASSISTANT_MODE=real en producción"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _production_requires_rate_limiting(self) -> "Settings":
+        if self.environment == "production" and not self.rate_limit_enabled:
+            raise ValueError(
+                "Define FEE_RATE_LIMIT_ENABLED=1 en producción: sin límite por IP, "
+                "endpoints como /verification/email/confirm o /assistant/chat quedan "
+                "sin cuota."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _production_forbids_the_default_verification_code(self) -> "Settings":
+        if self.environment == "production" and self.verification_static_code:
+            raise ValueError(
+                "FEE_VERIFICATION_STATIC_CODE debe quedar vacío en producción: el "
+                "código estático es un atajo de hackathon (ver ADR-OSINT-05) y, si "
+                "sigue activo, cualquiera puede fingir el consentimiento del correo "
+                "de un tercero. Vacíalo (falla cerrado) hasta implementar envío real."
             )
         return self

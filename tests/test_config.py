@@ -48,14 +48,48 @@ def test_osint_real_mode_is_disabled_under_test_environment(monkeypatch):
     assert Settings().osint_uses_real_engines is False
 
 
+def _minimal_production_env(monkeypatch) -> None:
+    """Variables sin las que producción no arranca, más allá del JWT secret."""
+    monkeypatch.setenv("FEE_RATE_LIMIT_ENABLED", "1")
+    monkeypatch.setenv("FEE_VERIFICATION_STATIC_CODE", "")
+
+
 def test_production_accepts_a_real_secret(monkeypatch):
     monkeypatch.setenv("FEE_ENVIRONMENT", "production")
     monkeypatch.setenv("FEE_JWT_SECRET", "a-proper-production-secret-value-32chars")
+    _minimal_production_env(monkeypatch)
 
     settings = Settings()
 
     assert settings.environment == "production"
     assert settings.docs_enabled is False
+
+
+def test_production_refuses_to_start_without_rate_limiting(monkeypatch):
+    monkeypatch.setenv("FEE_ENVIRONMENT", "production")
+    monkeypatch.setenv("FEE_JWT_SECRET", "a-proper-production-secret-value-32chars")
+    monkeypatch.setenv("FEE_VERIFICATION_STATIC_CODE", "")
+
+    with pytest.raises(ValidationError, match="RATE_LIMIT_ENABLED"):
+        Settings()
+
+
+def test_production_refuses_the_default_static_verification_code(monkeypatch):
+    monkeypatch.setenv("FEE_ENVIRONMENT", "production")
+    monkeypatch.setenv("FEE_JWT_SECRET", "a-proper-production-secret-value-32chars")
+    monkeypatch.setenv("FEE_RATE_LIMIT_ENABLED", "1")
+
+    with pytest.raises(ValidationError, match="VERIFICATION_STATIC_CODE"):
+        Settings()
+
+
+def test_production_accepts_an_empty_static_verification_code(monkeypatch):
+    monkeypatch.setenv("FEE_ENVIRONMENT", "production")
+    monkeypatch.setenv("FEE_JWT_SECRET", "a-proper-production-secret-value-32chars")
+    monkeypatch.setenv("FEE_RATE_LIMIT_ENABLED", "1")
+    monkeypatch.setenv("FEE_VERIFICATION_STATIC_CODE", "")
+
+    assert Settings().verification_static_code == ""
 
 
 def test_assistant_defaults_to_simulated_gateway():
@@ -76,6 +110,7 @@ def test_production_refuses_real_assistant_without_an_api_key(monkeypatch):
     monkeypatch.setenv("FEE_ENVIRONMENT", "production")
     monkeypatch.setenv("FEE_JWT_SECRET", "a-proper-production-secret-value-32chars")
     monkeypatch.setenv("FEE_ASSISTANT_MODE", "real")
+    _minimal_production_env(monkeypatch)
 
     with pytest.raises(ValidationError, match="ASSISTANT_API_KEY"):
         Settings()
@@ -86,10 +121,13 @@ def test_production_accepts_real_assistant_with_an_api_key(monkeypatch):
     monkeypatch.setenv("FEE_JWT_SECRET", "a-proper-production-secret-value-32chars")
     monkeypatch.setenv("FEE_ASSISTANT_MODE", "real")
     monkeypatch.setenv("FEE_ASSISTANT_API_KEY", "nvapi-test-key")
+    _minimal_production_env(monkeypatch)
 
     settings = Settings()
 
     assert settings.assistant_uses_real_gateway is True
+    assert settings.assistant_api_key.get_secret_value() == "nvapi-test-key"
+    assert "nvapi-test-key" not in repr(settings)
 
 
 def test_proxy_credentials_are_loaded_without_exposing_them(monkeypatch):

@@ -12,6 +12,14 @@ x-api-environment: &api-environment
   FEE_OSINT_ENGINE_MODE: ${FEE_OSINT_ENGINE_MODE:-real}
   FEE_OSINT_PROXY_URL: ${FEE_OSINT_PROXY_URL:-}
   FEE_CORS_ORIGINS: ${FEE_CORS_ORIGINS:-[]}
+  # Sin esto la app no arranca en producción (ver Settings._production_requires_rate_limiting):
+  # sin límite por IP, /verification/email/confirm y /assistant/chat quedan sin cuota.
+  FEE_RATE_LIMIT_ENABLED: ${FEE_RATE_LIMIT_ENABLED:-1}
+  # Estático a propósito para el hackathon (ADR-OSINT-05); vacío = falla cerrado.
+  # La app rechaza arrancar en producción si no está vacío.
+  FEE_VERIFICATION_STATIC_CODE: ${FEE_VERIFICATION_STATIC_CODE:-}
+  FEE_ASSISTANT_MODE: ${FEE_ASSISTANT_MODE:-fake}
+  FEE_ASSISTANT_API_KEY: ${FEE_ASSISTANT_API_KEY:-}
 
 x-logging: &logging
   driver: local
