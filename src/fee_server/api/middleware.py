@@ -38,8 +38,11 @@ class MaxBodySizeMiddleware:
         await self._app(scope, guarded_receive, send)
 
 
+_NO_STORE_PREFIXES = ("/api/v1/auth", "/api/v1/osint")
+
+
 class SecurityHeadersMiddleware:
-    """Añade cabeceras defensivas; `no-store` en las respuestas de `/auth`."""
+    """Añade cabeceras defensivas; `no-store` en respuestas con datos sensibles."""
 
     def __init__(self, app: ASGIApp) -> None:
         self._app = app
@@ -49,14 +52,14 @@ class SecurityHeadersMiddleware:
             await self._app(scope, receive, send)
             return
 
-        is_auth = scope["path"].startswith("/api/v1/auth")
+        is_sensitive = scope["path"].startswith(_NO_STORE_PREFIXES)
 
         async def send_with_headers(message: Message) -> None:
             if message["type"] == "http.response.start":
                 headers = message.setdefault("headers", [])
                 headers.append((b"x-content-type-options", b"nosniff"))
                 headers.append((b"referrer-policy", b"no-referrer"))
-                if is_auth:
+                if is_sensitive:
                     headers.append((b"cache-control", b"no-store"))
             await send(message)
 

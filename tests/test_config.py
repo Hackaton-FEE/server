@@ -34,6 +34,20 @@ def test_production_refuses_the_insecure_default_secret(monkeypatch):
         Settings()
 
 
+def test_osint_defaults_to_simulated_engines():
+    settings = Settings()
+
+    assert settings.osint_engine_mode == "fake"
+    assert settings.osint_uses_real_engines is False
+
+
+def test_osint_real_mode_is_disabled_under_test_environment(monkeypatch):
+    monkeypatch.setenv("FEE_ENVIRONMENT", "test")
+    monkeypatch.setenv("FEE_OSINT_ENGINE_MODE", "real")
+
+    assert Settings().osint_uses_real_engines is False
+
+
 def test_production_accepts_a_real_secret(monkeypatch):
     monkeypatch.setenv("FEE_ENVIRONMENT", "production")
     monkeypatch.setenv("FEE_JWT_SECRET", "a-proper-production-secret-value-32chars")

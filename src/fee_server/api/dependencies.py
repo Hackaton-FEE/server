@@ -12,6 +12,7 @@ from fee_server.db.models import User
 from fee_server.db.session import get_session
 from fee_server.domain.auth import repository
 from fee_server.domain.auth.service import AuthService
+from fee_server.domain.osint.service import ScanService
 
 
 def get_settings(request: Request) -> Settings:
@@ -27,6 +28,13 @@ def get_auth_service(session: SessionDep, settings: SettingsDep) -> AuthService:
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+
+
+def get_osint_service(session: SessionDep, settings: SettingsDep) -> ScanService:
+    return ScanService(session, settings)
+
+
+OsintServiceDep = Annotated[ScanService, Depends(get_osint_service)]
 
 
 def get_current_user(request: Request, session: SessionDep, settings: SettingsDep) -> User:

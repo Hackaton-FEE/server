@@ -1,0 +1,114 @@
+"""Contrato HTTP del módulo OSINT con motores simulados (sin red)."""
+
+from tests.osint.conftest import VALID_USERNAME_SCAN
+
+SCANS = "/api/v1/osint/scans"
+
+
+def _start(client, headers, **overrides):
+    payload = {**VALID_USERNAME_SCAN, **overrides}
+    return client.post(SCANS, json=payload, headers=headers)
+
+
+def test_scan_requires_authentication(client):
+    assert client.post(SCANS, json=VALID_USERNAME_SCAN).status_code == 401
+
+
+def test_full_scan_flow_reaches_a_dashboard(client, headers):
+    accepted = _start(client, headers)
+    assert accepted.status_code == 202
+    body = accepted.json()
+    assert body["status"] == "QUEUED"
+    scan_id = body["scan_id"]
+    assert body["polling_url"] == f"{SCANS}/{scan_id}"
+    assert body["events_url"] == f"{SCANS}/{scan_id}/events"
+
+    status = client.get(f"{SCANS}/{scan_id}", headers=headers)
+    assert status.status_code == 200
+    status_body = status.json()
+    assert status_body["status"] == "COMPLETED"
+    assert status_body["progress_percentage"] == 100
+    assert set(status_body["completed_engines"]) == {"blackbird", "maigret", "holehe"}
+
+    results = client.get(f"{SCANS}/{scan_id}/results", headers=headers)
+    assert results.status_code == 200
+    dashboard = results.json()
+    assert isinstance(dashboard["exposure_score"], int)
+    assert dashboard["risk_level"] in {"LOW", "MODERATE", "ELEVATED", "HIGH"}
+    assert dashboard["partial"] is False
+    assert dashboard["summary"]["platforms_found"] >= 1
+    assert dashboard["categories"]
+
+
+def test_github_is_merged_across_engines(client, headers):
+    scan_id = _start(client, headers).json()["scan_id"]
+    dashboard = client.get(f"{SCANS}/{scan_id}/results", headers=headers).json()
+
+    items = [item for cat in dashboard["categories"] for item in cat["items"]]
+    github = next(item for item in items if item["platform"] == "GitHub")
+    assert sorted(github["sources"]) == ["blackbird", "maigret"]
+    assert github["confidence"] == 98
+    assert github["details"]["location"] == "Portland, OR"
+
+
+def test_email_target_runs_holehe(client, headers):
+    scan_id = _start(client, headers, target_type="email", identifier="persona@example.com").json()[
+        "scan_id"
+    ]
+
+    dashboard = client.get(f"{SCANS}/{scan_id}/results", headers=headers).json()
+    assert "holehe" in dashboard["summary"]["engines_run"]
+    platforms = {item["platform"] for cat in dashboard["categories"] for item in cat["items"]}
+    assert "Adobe" in platforms
+
+
+def test_invalid_identifier_is_rejected(client, headers):
+    response = _start(client, headers, identifier="tiene espacios y símbolos !!")
+    assert response.status_code == 400
+    assert response.json()["type"].endswith("/invalid-identifier")
+
+
+def test_unsupported_target_type_is_rejected(client, headers):
+    response = _start(client, headers, target_type="telefono")
+    assert response.status_code == 400
+    assert response.json()["type"].endswith("/unsupported-target-type")
+
+
+def test_consent_is_required(client, headers):
+    response = _start(client, headers, consent_self_audit=False)
+    assert response.status_code == 400
+    assert response.json()["type"].endswith("/consent-required")
+
+
+def test_scans_are_isolated_between_accounts(client, headers, other_headers):
+    scan_id = _start(client, headers).json()["scan_id"]
+
+    assert client.get(f"{SCANS}/{scan_id}", headers=other_headers).status_code == 404
+    assert client.get(f"{SCANS}/{scan_id}/results", headers=other_headers).status_code == 404
+
+
+def test_delete_is_idempotent(client, headers):
+    scan_id = _start(client, headers).json()["scan_id"]
+
+    assert client.delete(f"{SCANS}/{scan_id}", headers=headers).status_code == 204
+    assert client.get(f"{SCANS}/{scan_id}", headers=headers).status_code == 404
+    assert client.delete(f"{SCANS}/{scan_id}", headers=headers).status_code == 204
+
+
+def test_results_are_not_cacheable(client, headers):
+    scan_id = _start(client, headers).json()["scan_id"]
+    results = client.get(f"{SCANS}/{scan_id}/results", headers=headers)
+    assert results.headers["cache-control"] == "no-store"
+
+
+def test_events_stream_emits_a_done_event(client, headers):
+    scan_id = _start(client, headers).json()["scan_id"]
+
+    response = client.get(f"{SCANS}/{scan_id}/events", headers=headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "event: done" in response.text
+
+
+def test_unknown_scan_returns_404(client, headers):
+    assert client.get(f"{SCANS}/does-not-exist", headers=headers).status_code == 404

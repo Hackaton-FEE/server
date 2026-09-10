@@ -5,6 +5,7 @@ app factory y solo prepara el engine (SQLAlchemy conecta de forma perezosa).
 """
 
 from collections.abc import Iterator
+from contextlib import contextmanager
 
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -35,6 +36,23 @@ def get_engine() -> Engine:
 
 def get_session() -> Iterator[Session]:
     """Dependencia FastAPI: una sesión por petición, commit al terminar bien."""
+    if _SessionLocal is None:
+        raise RuntimeError("Base de datos no configurada: llama a configure() primero")
+
+    session = _SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+@contextmanager
+def session_scope() -> Iterator[Session]:
+    """Sesión autónoma para trabajo fuera de una petición HTTP (tareas de fondo)."""
     if _SessionLocal is None:
         raise RuntimeError("Base de datos no configurada: llama a configure() primero")
 

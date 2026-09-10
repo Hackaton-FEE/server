@@ -1,6 +1,6 @@
-"""Errores de autenticación y su representación RFC 7807 (Problem Details).
+"""Errores de dominio y su representación RFC 7807 (Problem Details).
 
-Todas las respuestas de error de `/auth` usan `application/problem+json`, igual
+Todas las respuestas de error de la API usan `application/problem+json`, igual
 que el resto del contrato de la plataforma. Los mensajes son genéricos y nunca
 reflejan la entrada del usuario.
 """
@@ -11,7 +11,15 @@ from fastapi.responses import JSONResponse
 ERROR_BASE = "https://api.fee.local/errors/"
 
 
-class AuthError(Exception):
+class ProblemError(Exception):
+    """Base de los errores de dominio. Cada subclase fija estado y código."""
+
+    status_code: int = status.HTTP_400_BAD_REQUEST
+    code: str = "error"
+    detail: str = "No fue posible completar la operación."
+
+
+class AuthError(ProblemError):
     """Base de los errores de autenticación. Cada subclase fija estado y código."""
 
     status_code: int = status.HTTP_400_BAD_REQUEST
@@ -41,6 +49,41 @@ class InvalidSessionError(AuthError):
     detail = "La sesión no es válida. Inicia sesión de nuevo."
 
 
+class OsintError(ProblemError):
+    """Base de los errores del motor OSINT."""
+
+    status_code: int = status.HTTP_400_BAD_REQUEST
+    code: str = "osint-error"
+    detail: str = "No fue posible procesar el escaneo."
+
+
+class InvalidIdentifierError(OsintError):
+    code = "invalid-identifier"
+    detail = "El identificador no tiene un formato válido para este tipo de escaneo."
+
+
+class UnsupportedTargetTypeError(OsintError):
+    code = "unsupported-target-type"
+    detail = "El tipo de objetivo no está soportado."
+
+
+class ConsentRequiredError(OsintError):
+    code = "consent-required"
+    detail = "Se necesita el consentimiento de auto-auditoría para iniciar el escaneo."
+
+
+class ScanNotFoundError(OsintError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "scan-not-found"
+    detail = "No encontramos ese escaneo."
+
+
+class ScanNotReadyError(OsintError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "scan-not-ready"
+    detail = "El escaneo todavía no tiene resultados."
+
+
 def problem_response(*, status_code: int, code: str, detail: str, instance: str) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
@@ -56,8 +99,8 @@ def problem_response(*, status_code: int, code: str, detail: str, instance: str)
 
 
 def install_error_handlers(app: FastAPI) -> None:
-    @app.exception_handler(AuthError)
-    async def _handle_auth_error(request: Request, exc: AuthError) -> JSONResponse:
+    @app.exception_handler(ProblemError)
+    async def _handle_problem_error(request: Request, exc: ProblemError) -> JSONResponse:
         return problem_response(
             status_code=exc.status_code,
             code=exc.code,

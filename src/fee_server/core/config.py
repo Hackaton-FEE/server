@@ -45,9 +45,24 @@ class Settings(BaseSettings):
     cors_origins: tuple[str, ...] = ()
     max_request_body_bytes: int = 16_384
 
+    # --- Motor OSINT (huella digital) ---
+    # `fake`: motores simulados con salidas deterministas; no tocan la red.
+    # `real`: subprocesos a las herramientas vendorizadas (fase posterior).
+    osint_engine_mode: Literal["fake", "real"] = "fake"
+    osint_retention_days: int = 7
+    osint_max_concurrent_scans: int = 2
+    osint_engine_timeout_seconds: int = 120
+    osint_max_output_bytes: int = 5_000_000
+    osint_proxy_url: str = ""
+
     @property
     def docs_enabled(self) -> bool:
         return self.environment != "production"
+
+    @property
+    def osint_uses_real_engines(self) -> bool:
+        # El entorno de pruebas nunca ejecuta herramientas reales.
+        return self.osint_engine_mode == "real" and self.environment != "test"
 
     @field_validator("jwt_secret")
     @classmethod

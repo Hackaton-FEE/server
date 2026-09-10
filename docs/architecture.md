@@ -17,8 +17,19 @@ La factory es `src/fee_server/main.py:create_app`. Las pruebas de comportamiento
 | `POST /api/v1/auth/logout` | HTTP 204. |
 | `GET /api/v1/auth/me` | HTTP 200, resumen de la cuenta (requiere `Authorization: Bearer`). |
 | `GET /.well-known/assetlinks.json` · `GET /.well-known/apple-app-site-association` | HTTP 200, asociación de dominio para passkeys nativas. |
+| `POST /api/v1/osint/scans` | HTTP 202, escaneo de huella digital encolado (requiere `Bearer`). |
+| `GET /api/v1/osint/scans/{id}` | HTTP 200, estado y progreso del escaneo. |
+| `GET /api/v1/osint/scans/{id}/results` | HTTP 200, proyección para el dashboard (Exposure Score y categorías). |
+| `GET /api/v1/osint/scans/{id}/events` | HTTP 200, stream SSE de progreso. |
+| `DELETE /api/v1/osint/scans/{id}` | HTTP 204, el usuario borra su escaneo. |
 
 El contrato completo de autenticación, con ejemplos y notas para el cliente Flutter, está en [auth-contract.md](auth-contract.md).
+
+El módulo OSINT descubre la huella digital de la propia identidad del usuario
+orquestando varios motores open source. Su diseño, contrato detallado y decisiones
+están en [osint-architecture.md](osint-architecture.md). En esta fase los motores
+son simulaciones deterministas (`FEE_OSINT_ENGINE_MODE=fake`) que no realizan
+peticiones de red; los adaptadores reales llegan en una fase posterior.
 
 `GET /api/v1/health` confirma que la aplicación responde. No acredita disponibilidad de Google/Meta, estado de casos, captura de evidencia ni capacidad de retiro. Los endpoints interactivos de documentación se desactivan cuando `FEE_ENVIRONMENT` está configurado como `production`.
 

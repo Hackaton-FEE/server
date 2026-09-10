@@ -432,14 +432,14 @@ error de proceso (no ante `rateLimit` de sitios).
 ```python
 @dataclass(frozen=True)
 class Finding:
-    platform: str            # nombre canónico (catalog.py)
-    category: str            # enum de §6
+    platform: str  # nombre canónico (catalog.py)
+    category: str  # enum de §6
     url: str | None
     username: str | None
-    status: str              # CONFIRMED | POTENTIAL_MATCH | RATE_LIMITED
-    confidence: int          # 0-100
-    sources: tuple[str, ...] # motores que lo aportaron
-    details: dict            # allowlist de claves
+    status: str  # CONFIRMED | POTENTIAL_MATCH | RATE_LIMITED
+    confidence: int  # 0-100
+    sources: tuple[str, ...]  # motores que lo aportaron
+    details: dict  # allowlist de claves
 ```
 
 Inmutable: cada paso (`normalize` → `dedup` → `scoring`) devuelve nuevas
@@ -529,7 +529,7 @@ Cada fase es un PR pequeño hacia `main` con aceptación observable.
 
 | Fase | Contenido | Aceptación |
 | --- | --- | --- |
-| **0 · Contrato + scaffolding** | `schemas.py`, migración `0002`, rutas devolviendo datos **fake** deterministas, esqueleto SSE, `FakeEngine`, tests de contrato. Sin herramientas reales. | `202 → polling → results` verde con datos fake; OpenAPI actualizado; desbloquea a Flutter |
+| **0 · Contrato + scaffolding** ✅ | `schemas.py`, migración `0002`, tablas `osint_scans`/`osint_findings`, rutas reales con datos de motores **simulados** deterministas, `merge_findings`, Exposure Score, esqueleto SSE (polling a BD), errores RFC 7807, cuotas por cuenta. Sin herramientas reales. | `202 → polling → results` verde con datos simulados; 75 pruebas; cobertura 96 %; desbloquea a Flutter |
 | **1 · Adapters de motores** | `vendor/osint/` (subtree + `setup.sh`), `engines/process.py`, `blackbird.py`, `maigret.py`, `holehe.py`, `normalize.py` + `test_normalize.py` contra fixtures | Cada motor: fixture → `Finding[]` esperado; `test_process.py` verde |
 | **2 · Orquestación + score** | `ScanRunner` (cascada + pivoteo), `dedup.py`, `scoring.py`, ejecución real tras `FEE_OSINT_ENGINE_MODE=real` | End-to-end con `torvalds` documentado en el PR; `test_dedup`/`test_scoring` verdes |
 | **3 · Hardening** | Proxy, *backoff*/circuit-breaker, `purge_expired()`, cuotas por cuenta, cifrado del identificador, `DELETE` | `docs/architecture.md` y `docs/auth-contract.md`/OpenAPI al día; checklist de seguridad |
