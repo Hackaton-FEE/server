@@ -14,6 +14,16 @@ COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 RUN uv sync --frozen --no-dev --no-cache
 
+# Herramientas OSINT reales (opcional; requiere red en el build).
+# docker build --build-arg OSINT_REAL=1
+ARG OSINT_REAL=0
+COPY vendor ./vendor
+RUN if [ "$OSINT_REAL" = "1" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends git \
+        && rm -rf /var/lib/apt/lists/* \
+        && ./vendor/osint/setup.sh ; \
+    fi
+
 USER 10001:10001
 EXPOSE 8000
 

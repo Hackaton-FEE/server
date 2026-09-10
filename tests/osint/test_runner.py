@@ -1,6 +1,4 @@
-"""Orquestación de la cascada: tolerancia a fallos y modo real no disponible."""
-
-import pytest
+"""Orquestación de la cascada: selección de motores y tolerancia a fallos."""
 
 from fee_server.core.config import Settings
 from fee_server.db.models import OsintScan, User
@@ -34,14 +32,24 @@ class _BoomEngine:
         raise RuntimeError("motor caído")
 
 
-def test_build_engines_refuses_real_mode_until_implemented():
+def test_build_engines_uses_fake_engines_by_default():
+    engines = engines_module.build_engines(Settings(environment="test"))
+
+    assert [engine.name for engine in engines] == ["blackbird", "maigret", "holehe"]
+    assert all(type(engine).__name__.startswith("Fake") for engine in engines)
+
+
+def test_build_engines_returns_real_adapters_in_real_mode():
     real = Settings(
         environment="development",
         jwt_secret="a-proper-production-secret-value-32chars",
         osint_engine_mode="real",
     )
-    with pytest.raises(NotImplementedError):
-        engines_module.build_engines(real)
+
+    engines = engines_module.build_engines(real)
+
+    assert [engine.name for engine in engines] == ["blackbird", "maigret", "holehe"]
+    assert isinstance(engines[0], engines_module.BlackbirdEngine)
 
 
 def test_a_failing_engine_does_not_abort_the_scan(client, settings, monkeypatch):

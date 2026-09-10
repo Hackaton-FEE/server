@@ -1,8 +1,9 @@
 """Orquestación de la cascada de motores para un escaneo.
 
-Fase inicial: ejecución secuencial de motores simulados desde una tarea de fondo
-de FastAPI. El contrato HTTP (202 + polling) es el mismo que tendría un worker
-externo; ver ADR-OSINT-01 en `docs/osint-architecture.md`.
+Ejecución secuencial de los motores desde una tarea de fondo de FastAPI. El
+contrato HTTP (202 + polling) es el mismo que tendría un worker externo; ver
+ADR-OSINT-01 en `docs/osint-architecture.md`. Los motores son simulados o reales
+según `FEE_OSINT_ENGINE_MODE`; un motor que falla no aborta el escaneo.
 """
 
 import logging
@@ -29,8 +30,8 @@ def run_scan(*, scan_id: str, engine_request: EngineRequest, settings: Settings)
     """Ejecuta la cascada y persiste el resultado. No propaga excepciones."""
     try:
         engines = build_engines(settings)
-    except NotImplementedError:
-        logger.warning("osint scan %s: motores reales no disponibles", scan_id)
+    except Exception:  # noqa: BLE001 - sin motores no hay escaneo posible
+        logger.exception("osint scan %s: no se pudieron construir los motores", scan_id)
         _fail(scan_id, "engines-unavailable")
         return
 

@@ -1,47 +1,24 @@
-"""Puertos de los motores OSINT y su implementación simulada.
+"""Motores simulados con salidas deterministas derivadas de la entrada.
 
-Fase inicial: solo motores `Fake*` con salidas deterministas derivadas de la
-entrada. No tocan la red. Los adaptadores reales (subprocess a las herramientas
-vendorizadas) llegan en una fase posterior y se ubicarán en `engines/`.
+No tocan la red. Son el modo por defecto (`FEE_OSINT_ENGINE_MODE=fake`) y el
+único disponible bajo el entorno de pruebas.
 """
 
 from collections.abc import Iterable
-from dataclasses import dataclass, field
-from typing import Protocol
 
-from fee_server.core.config import Settings
+from fee_server.domain.osint.engines.base import (
+    ENGINE_DEGRADED,
+    ENGINE_OK,
+    ENGINE_SKIPPED,
+    EngineRequest,
+    EngineResult,
+)
 from fee_server.domain.osint.findings import (
     CONFIRMED,
     POTENTIAL_MATCH,
     RATE_LIMITED,
     Finding,
 )
-
-# Estado de ejecución de un motor dentro de un escaneo.
-ENGINE_OK = "ok"
-ENGINE_DEGRADED = "degraded"
-ENGINE_ERROR = "error"
-ENGINE_SKIPPED = "skipped"
-
-
-@dataclass(frozen=True, slots=True)
-class EngineRequest:
-    usernames: tuple[str, ...]
-    email: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class EngineResult:
-    engine: str
-    status: str
-    findings: tuple[Finding, ...] = field(default_factory=tuple)
-    error_category: str | None = None
-
-
-class Engine(Protocol):
-    name: str
-
-    def run(self, request: EngineRequest) -> EngineResult: ...
 
 
 class _FakeUsernameEngine:
@@ -162,13 +139,3 @@ class FakeHolehe:
             ),
         )
         return EngineResult(self.name, ENGINE_DEGRADED, findings)
-
-
-def build_engines(settings: Settings) -> tuple[Engine, ...]:
-    """Cascada de motores en orden: rápido, profundo, vector correo."""
-    if settings.osint_uses_real_engines:
-        raise NotImplementedError(
-            "Los motores reales se implementan en una fase posterior; "
-            "usa FEE_OSINT_ENGINE_MODE=fake"
-        )
-    return (FakeBlackbird(), FakeMaigret(), FakeHolehe())

@@ -1,0 +1,6 @@
+name,domain,method,frequent_rate_limit,rateLimit,exists,emailrecovery,phoneNumber,others
+imgur,imgur.com,register,False,False,True,,,
+lastpass,lastpass.com,register,False,False,True,jo****@gmail.com,,
+twitter,twitter.com,register,False,False,True,,+1********89,
+spotify,spotify.com,register,True,True,,,,
+caringbridge,caringbridge.org,register,False,False,False,,,

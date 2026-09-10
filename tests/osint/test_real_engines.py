@@ -1,0 +1,108 @@
+"""Adaptadores reales: manejo de ausencia de herramienta y ruta de parseo.
+
+La ejecución real de las herramientas se valida a mano con
+`FEE_OSINT_ENGINE_MODE=real` y se documenta en el PR; aquí se sustituye
+`run_tool` por un doble que deja el archivo de salida esperado.
+"""
+
+from pathlib import Path
+
+import pytest
+
+from fee_server.core.config import Settings
+from fee_server.domain.osint.engines import real
+from fee_server.domain.osint.engines.base import ENGINE_SKIPPED, EngineRequest
+from fee_server.domain.osint.engines.process import ToolExecutionError, ToolRun
+from fee_server.domain.osint.findings import CONFIRMED
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _real_settings(vendor_dir: str) -> Settings:
+    return Settings(
+        environment="development",
+        jwt_secret="a-proper-production-secret-value-32chars",
+        osint_engine_mode="real",
+        osint_vendor_dir=vendor_dir,
+    )
+
+
+def _install_stub_tool(root: Path, tool: str, *executables: str) -> None:
+    for executable in executables:
+        path = root / tool / ".venv" / "bin" / executable
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("#!/bin/sh\n")
+    if tool == "blackbird":
+        (root / tool / "blackbird.py").write_text("# stub\n")
+
+
+def test_missing_tool_raises_tool_execution_error(tmp_path):
+    settings = _real_settings(str(tmp_path))  # vendor vacío
+
+    with pytest.raises(ToolExecutionError):
+        real.BlackbirdEngine(settings).run(EngineRequest(usernames=("alias",)))
+
+
+def test_engines_skip_when_their_input_is_absent(tmp_path):
+    settings = _real_settings(str(tmp_path))
+
+    assert real.BlackbirdEngine(settings).run(EngineRequest(usernames=())).status == ENGINE_SKIPPED
+    assert real.HoleheEngine(settings).run(EngineRequest(usernames=("x",))).status == ENGINE_SKIPPED
+
+
+def test_blackbird_engine_parses_the_generated_report(tmp_path, monkeypatch):
+    _install_stub_tool(tmp_path, "blackbird", "python")
+    settings = _real_settings(str(tmp_path))
+    fixture = (FIXTURES / "blackbird_testuser12345.json").read_text("utf-8")
+
+    def fake_run_tool(argv, *, cwd, **_kwargs):
+        report_dir = Path(cwd) / "testuser12345_run"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        (report_dir / "testuser12345_blackbird.json").write_text(fixture)
+        return ToolRun(0, "", "", timed_out=False, truncated=False)
+
+    monkeypatch.setattr(real, "run_tool", fake_run_tool)
+
+    result = real.BlackbirdEngine(settings).run(EngineRequest(usernames=("testuser12345",)))
+
+    assert result.findings
+    assert any(f.platform == "GitLab" for f in result.findings)
+    assert all(f.username == "testuser12345" for f in result.findings)
+
+
+def test_maigret_engine_parses_the_generated_report(tmp_path, monkeypatch):
+    _install_stub_tool(tmp_path, "maigret", "maigret")
+    settings = _real_settings(str(tmp_path))
+    fixture = (FIXTURES / "maigret_torvalds_simple.json").read_text("utf-8")
+
+    def fake_run_tool(argv, *, cwd, **_kwargs):
+        (Path(cwd) / "report_torvalds_simple.json").write_text(fixture)
+        return ToolRun(0, "", "", timed_out=False, truncated=False)
+
+    monkeypatch.setattr(real, "run_tool", fake_run_tool)
+
+    result = real.MaigretEngine(settings).run(EngineRequest(usernames=("torvalds",)))
+
+    github = next(f for f in result.findings if f.platform == "GitHub")
+    assert github.status == CONFIRMED
+    assert github.details["account_id"] == "1024025"
+
+
+def test_holehe_engine_parses_the_generated_csv(tmp_path, monkeypatch):
+    _install_stub_tool(tmp_path, "holehe", "holehe")
+    settings = _real_settings(str(tmp_path))
+    fixture = (FIXTURES / "holehe_confirmed.csv").read_text("utf-8")
+
+    def fake_run_tool(argv, *, cwd, **_kwargs):
+        (Path(cwd) / "holehe_123_persona@example.com_results.csv").write_text(fixture)
+        return ToolRun(0, "", "", timed_out=False, truncated=False)
+
+    monkeypatch.setattr(real, "run_tool", fake_run_tool)
+
+    result = real.HoleheEngine(settings).run(
+        EngineRequest(usernames=(), email="persona@example.com")
+    )
+
+    platforms = {f.platform: f for f in result.findings}
+    assert platforms["imgur"].status == CONFIRMED
+    assert platforms["lastpass"].details["masked_email"] == "jo****@gmail.com"

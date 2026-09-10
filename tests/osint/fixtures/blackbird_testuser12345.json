@@ -1,0 +1,735 @@
+[
+    {
+        "name": "Wattpad",
+        "url": "https://www.wattpad.com/api/v3/users/testuser12345",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Gitea",
+        "url": "https://gitea.com/api/v1/users/testuser12345",
+        "category": "coding",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "SoundCloud",
+        "url": "https://soundcloud.com/testuser12345",
+        "category": "music",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Pastebin",
+        "url": "https://pastebin.com/u/testuser12345",
+        "category": "tech",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "lichess.org",
+        "url": "https://lichess.org/api/player/autocomplete?term=testuser12345&exists=1",
+        "category": "gaming",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Giphy (Channel)",
+        "url": "https://giphy.com/channel/testuser12345",
+        "category": "images",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "GitLab",
+        "url": "https://gitlab.com/api/v4/users?username=testuser12345",
+        "category": "coding",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Linktree",
+        "url": "https://linktr.ee/testuser12345",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "PayPal.Me",
+        "url": "https://www.paypal.com/paypalme/testuser12345",
+        "category": "finance",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Wikidot",
+        "url": "https://www.wikidot.com/user:info/testuser12345",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Greasy Fork",
+        "url": "https://greasyfork.org/en/users?q=testuser12345",
+        "category": "tech",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Picsart",
+        "url": "https://api.picsart.com/users/show/testuser12345.json",
+        "category": "art",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Periscope",
+        "url": "https://www.periscope.tv/testuser12345",
+        "category": "video",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "dev.to",
+        "url": "https://dev.to/api/users/by_username?url=testuser12345",
+        "category": "coding",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "WordPress.com (Public)",
+        "url": "https://public-api.wordpress.com/rest/v1.1/sites/testuser12345.wordpress.com",
+        "category": "blog",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "WordPress.org (Profiles)",
+        "url": "https://login.wordpress.org/wp-json/wporg/v1/username-available/testuser12345",
+        "category": "blog",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "WordPress.org (Forums)",
+        "url": "https://login.wordpress.org/wp-json/wporg/v1/username-available/testuser12345",
+        "category": "blog",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "X",
+        "url": "https://api.x.com/i/users/username_available.json?username=testuser12345",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Stripchat",
+        "url": "https://stripchat.com/api/front/users/checkUsername?username=testuser12345",
+        "category": "xx NSFW xx",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Substack",
+        "url": "https://substack.com/api/v1/user/testuser12345/public_profile",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "diigo",
+        "url": "https://www.diigo.com/interact_api/load_profile_info?name=testuser12345",
+        "category": "images",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Wykop",
+        "url": "https://wykop.pl/ludzie/testuser12345",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Disqus",
+        "url": "https://disqus.com/api/3.0/users/details?user=username:testuser12345&api_key=E8Uh5l5fHZ6gD8U3KycjAIAk46f68Zw7C6eW8WSjZvCLXebZ7p0r1yrYDrLilk2F",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Docker Hub (Organization)",
+        "url": "https://hub.docker.com/v2/orgs/testuser12345/",
+        "category": "coding",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Docker Hub (User)",
+        "url": "https://hub.docker.com/v2/users/testuser12345/",
+        "category": "coding",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "XVideos",
+        "url": "https://www.xvideos.com/profiles/testuser12345/feed/",
+        "category": "xx NSFW xx",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Hacker News",
+        "url": "https://hacker-news.firebaseio.com/v0/user/testuser12345.json?print=pretty",
+        "category": "tech",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "HackerRank",
+        "url": "https://www.hackerrank.com/rest/contests/master/hackers/testuser12345/profile",
+        "category": "tech",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "YouNow",
+        "url": "https://api.younow.com/php/api/broadcast/info/user=testuser12345",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "MCUUID (Minecraft)",
+        "url": "https://playerdb.co/api/player/minecraft/testuser12345",
+        "category": "gaming",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "HackAdvisor",
+        "url": "https://hackadvisor.io/api/v2/profile/testuser12345/",
+        "category": "tech",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "YouTube User2",
+        "url": "https://www.youtube.com/@testuser12345",
+        "category": "video",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Tellonym",
+        "url": "https://api.tellonym.me/profiles/name/testuser12345",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Donation Alerts",
+        "url": "https://www.donationalerts.com/api/v1/user/testuser12345/donationpagesettings",
+        "category": "finance",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "TETR.IO",
+        "url": "https://ch.tetr.io/api/users/testuser12345",
+        "category": "gaming",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Minds",
+        "url": "https://www.minds.com/api/v3/register/validate?username=testuser12345",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Pornhub (User)",
+        "url": "https://www.pornhub.com/users/testuser12345",
+        "category": "xx NSFW xx",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "DRIVE2.RU",
+        "url": "https://www.drive2.ru/users/testuser12345/",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "thegatewaypundit",
+        "url": "https://www.thegatewaypundit.com/author/testuser12345/",
+        "category": "political",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Znanija",
+        "url": "https://znanija.com/graphql/ru?operationName=NickAvailability&query=query%20NickAvailability%28%24nick%3AString%21%29%7BnickAvailability%28nick%3A%24nick%29%7BisAvailable%7D%7D&variables=%7B%22nick%22%3A%22testuser12345%22%7D",
+        "category": "misc",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Duolingo",
+        "url": "https://www.duolingo.com/2017-06-30/users?username=testuser12345&_=1628308619574",
+        "category": "hobby",
+        "status": "FOUND",
+        "metadata": [
+            {
+                "schema": "JSON",
+                "type": "Image",
+                "name": "Avatar",
+                "prefix": "https:",
+                "path": [
+                    "users",
+                    0,
+                    "picture"
+                ],
+                "downloaded": false,
+                "value": "https://simg-ssl.duolingo.com/avatar/default_2"
+            },
+            {
+                "schema": "JSON",
+                "type": "Array",
+                "item-path": [
+                    "title"
+                ],
+                "name": "Courses",
+                "path": [
+                    "users",
+                    0,
+                    "courses"
+                ],
+                "value": [
+                    "Spanish"
+                ]
+            }
+        ]
+    },
+    {
+        "name": "Mixcloud",
+        "url": "https://api.mixcloud.com/testuser12345/",
+        "category": "music",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "TikTok",
+        "url": "https://www.tiktok.com/oembed?url=https://www.tiktok.com/@testuser12345",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": [
+            {
+                "schema": "JSON",
+                "type": "String",
+                "name": "Name",
+                "path": [
+                    "author_name"
+                ],
+                "value": "testuser12345"
+            }
+        ]
+    },
+    {
+        "name": "Mod DB",
+        "url": "https://www.moddb.com/html/scripts/autocomplete.php?a=username&q=testuser12345",
+        "category": "gaming",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "HubPages",
+        "url": "https://hubpages.com/@testuser12345",
+        "category": "blog",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Etoro",
+        "url": "https://www.etoro.com/api/logininfo/v1.1/users/testuser12345",
+        "category": "finance",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Monkeytype",
+        "url": "https://api.monkeytype.com/users/testuser12345/profile",
+        "category": "coding",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "HuggingFace",
+        "url": "https://huggingface.co/testuser12345",
+        "category": "tech",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Minecraft List",
+        "url": "https://minecraftlist.com/api/legacy/players/testuser12345",
+        "category": "gaming",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "HudsonRock",
+        "url": "https://cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-username?username=testuser12345",
+        "category": "tech",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "biolink",
+        "url": "https://bio.link/testuser12345",
+        "category": "misc",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "IFTTT",
+        "url": "https://ifttt.com/p/testuser12345",
+        "category": "misc",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "TradingView",
+        "url": "https://www.tradingview.com/u/testuser12345/",
+        "category": "finance",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Blogspot",
+        "url": "https://testuser12345.blogspot.com/?hl=en-US",
+        "category": "blog",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Trello",
+        "url": "https://trello.com/1/Members/testuser12345",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Bluesky Username",
+        "url": "https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=testuser12345.bsky.social",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "RedGIFs",
+        "url": "https://api.redgifs.com/v1/users/testuser12345",
+        "category": "xx NSFW xx",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "BoardGameGeek",
+        "url": "https://api.geekdo.com/api/accounts/validate/username?username=testuser12345",
+        "category": "gaming",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Truth Social",
+        "url": "https://truthsocial.com/api/v1/accounts/lookup?acct=testuser12345",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "MyAnimeList",
+        "url": "https://myanimelist.net/profile/testuser12345",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Fansly",
+        "url": "https://apiv3.fansly.com/api/v1/account?usernames=testuser12345",
+        "category": "xx NSFW xx",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Fanslist (OnlyFans)",
+        "url": "https://fanslist.com/search?q=testuser12345",
+        "category": "xx NSFW xx",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "imagefap",
+        "url": "https://www.imagefap.com/profile/testuser12345",
+        "category": "xx NSFW xx",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Imgur",
+        "url": "https://api.imgur.com/account/v1/accounts/testuser12345?client_id=546c25a59c58ad7",
+        "category": "images",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Roblox",
+        "url": "https://auth.roblox.com/v1/usernames/validate?username=testuser12345&birthday=2019-12-31T23:00:00.000Z",
+        "category": "gaming",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Instagram",
+        "url": "https://www.instagram.com/testuser12345/",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Instructables",
+        "url": "https://www.instructables.com/json-api/showAuthorExists?screenName=testuser12345",
+        "category": "hobby",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "RubyGems.org",
+        "url": "https://rubygems.org/api/v1/profiles/testuser12345.json",
+        "category": "coding",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Calendy",
+        "url": "https://calendly.com/api/booking/profiles/testuser12345",
+        "category": "misc",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "RumbleUser",
+        "url": "https://rumble.com/user/testuser12345",
+        "category": "political",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Twitch",
+        "url": "https://twitchtracker.com/testuser12345",
+        "category": "gaming",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "FL.ru",
+        "url": "https://www.fl.ru/users/testuser12345/portfolio/",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Flipboard",
+        "url": "https://flipboard.com/@testuser12345",
+        "category": "tech",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Ultimate Guitar",
+        "url": "https://www.ultimate-guitar.com/u/testuser12345",
+        "category": "hobby",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "itch.io",
+        "url": "https://itch.io/profile/testuser12345",
+        "category": "gaming",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Ameblo",
+        "url": "https://ameblo.jp/testuser12345",
+        "category": "blog",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Scratch",
+        "url": "https://api.scratch.mit.edu/accounts/checkusername/testuser12345/",
+        "category": "coding",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Untappd",
+        "url": "https://untappd.com/user/testuser12345/",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "chatango.com",
+        "url": "https://testuser12345.chatango.com",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Chess.com",
+        "url": "https://api.chess.com/pub/player/testuser12345",
+        "category": "gaming",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Artbreeder",
+        "url": "https://www.artbreeder.com/testuser12345",
+        "category": "art",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Kick",
+        "url": "https://kick.com/api/v2/channels/testuser12345",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Freelancer",
+        "url": "https://www.freelancer.com/api/users/0.1/users?usernames%5B%5D=testuser12345&compact=true",
+        "category": "business",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Vimeo",
+        "url": "https://vimeo.com/testuser12345",
+        "category": "video",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "AtCoder",
+        "url": "https://atcoder.jp/users/testuser12345",
+        "category": "coding",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "freesound",
+        "url": "https://freesound.org/people/testuser12345/section/stats/?ajax=1",
+        "category": "music",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Fur Affinity",
+        "url": "https://www.furaffinity.net/user/testuser12345/",
+        "category": "images",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Chomikuj.pl",
+        "url": "https://chomikuj.pl/testuser12345/",
+        "category": "misc",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Kongregate",
+        "url": "https://www.kongregate.com/accounts/testuser12345",
+        "category": "gaming",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Codeforces",
+        "url": "https://codeforces.com/api/user.info?handles=testuser12345",
+        "category": "coding",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Ko-Fi",
+        "url": "https://ko-fi.com/testuser12345",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Bandlab",
+        "url": "https://www.bandlab.com/api/v1.3/users/testuser12345",
+        "category": "music",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "slides",
+        "url": "https://slides.com/testuser12345",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "GeeksForGeeks",
+        "url": "https://authapi.geeksforgeeks.org/api-get/user-profile-info/?handle=testuser12345",
+        "category": "coding",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "OpenStreetMap",
+        "url": "https://www.openstreetmap.org/user/testuser12345",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Genius (User)",
+        "url": "https://genius.com/testuser12345",
+        "category": "music",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Letterboxd",
+        "url": "https://letterboxd.com/testuser12345/",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Geocaching",
+        "url": "https://www.geocaching.com/p/?u=testuser12345",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    },
+    {
+        "name": "Gettr",
+        "url": "https://gettr.com/api/s/uinf/testuser12345",
+        "category": "social",
+        "status": "FOUND",
+        "metadata": null
+    }
+]

@@ -144,9 +144,9 @@ src/fee_server/
 migrations/versions/
   0002_add_osint_tables.py
 vendor/osint/
-  README.md                  # cómo se vendorizan y actualizan las herramientas
-  setup.sh                   # crea un .venv por herramienta con uv
-  blackbird/ maigret/ holehe/ (git subtree; no se edita su código)
+  README.md                  # layout esperado y validación manual del modo real
+  setup.sh                   # crea un .venv por herramienta con uv (versiones fijadas)
+  .gitignore                 # blackbird/ maigret/ holehe/ los genera setup.sh
 tests/osint/
   conftest.py
   fakes.py                   # FakeEngine con salidas de laboratorio
@@ -492,7 +492,7 @@ poco / nada en el score.
 | `FEE_OSINT_ENGINE_TIMEOUT_SECONDS` | `120` | timeout por motor |
 | `FEE_OSINT_MAX_OUTPUT_BYTES` | `5_000_000` | cap de stdout por subproceso |
 | `FEE_OSINT_PROXY_URL` | vacío | proxy HTTP/SOCKS para las herramientas |
-| `FEE_OSINT_BLACKBIRD_PATH` / `_MAIGRET_PATH` / `_HOLEHE_PATH` | rutas en `vendor/osint/*/.venv/bin` | ejecutables |
+| `FEE_OSINT_VENDOR_DIR` | `vendor/osint` | raíz de las herramientas; cada una en `<dir>/<nombre>/.venv/bin` |
 
 Validadores: si `FEE_OSINT_ENGINE_MODE=real` y falta `FEE_OSINT_ENC_KEY` o algún
 path, la app **no arranca** (mismo patrón que el secreto JWT en producción).
@@ -530,8 +530,8 @@ Cada fase es un PR pequeño hacia `main` con aceptación observable.
 | Fase | Contenido | Aceptación |
 | --- | --- | --- |
 | **0 · Contrato + scaffolding** ✅ | `schemas.py`, migración `0002`, tablas `osint_scans`/`osint_findings`, rutas reales con datos de motores **simulados** deterministas, `merge_findings`, Exposure Score, esqueleto SSE (polling a BD), errores RFC 7807, cuotas por cuenta. Sin herramientas reales. | `202 → polling → results` verde con datos simulados; 75 pruebas; cobertura 96 %; desbloquea a Flutter |
-| **1 · Adapters de motores** | `vendor/osint/` (subtree + `setup.sh`), `engines/process.py`, `blackbird.py`, `maigret.py`, `holehe.py`, `normalize.py` + `test_normalize.py` contra fixtures | Cada motor: fixture → `Finding[]` esperado; `test_process.py` verde |
-| **2 · Orquestación + score** | `ScanRunner` (cascada + pivoteo), `dedup.py`, `scoring.py`, ejecución real tras `FEE_OSINT_ENGINE_MODE=real` | End-to-end con `torvalds` documentado en el PR; `test_dedup`/`test_scoring` verdes |
+| **1 · Adapters de motores** ✅ | `vendor/osint/setup.sh` (un venv `uv` por herramienta), `engines/process.py` (subprocess acotado, sin shell), `engines/parsers.py` (salida cruda → `Finding[]`), `engines/real.py` (`BlackbirdEngine`/`MaigretEngine`/`HoleheEngine`), `build_engines` conmuta simulado/real. Parsers probados contra capturas reales de `osint_lab/test_runs/`. | `test_parsers`/`test_process`/`test_real_engines` verdes; 100 pruebas; cobertura 94 %. Ejecución real = validación manual (no CI) |
+| **2 · Orquestación + score** | `ScanRunner` (cascada + pivoteo real usando IDs/alias descubiertos), `--db` persistente de maigret, concurrencia por escaneo, end-to-end `torvalds` documentado | Pivoteo verificado; `test_dedup`/`test_scoring` verdes |
 | **3 · Hardening** | Proxy, *backoff*/circuit-breaker, `purge_expired()`, cuotas por cuenta, cifrado del identificador, `DELETE` | `docs/architecture.md` y `docs/auth-contract.md`/OpenAPI al día; checklist de seguridad |
 | **4 · Opcional** | Catálogo JustDelete.me para remediación; ExifTool + vector archivos; recursión profundidad 2 | fuera del alcance comprometido |
 
@@ -558,20 +558,23 @@ Cada fase es un PR pequeño hacia `main` con aceptación observable.
 
 ### ADR-OSINT-02 · Herramientas vendorizadas y ejecutadas como subproceso
 
-- **Estado**: propuesto.
+- **Estado**: aceptado (fase 1).
 - **Contexto**: Blackbird no se distribuye como paquete pip (es un repo con
   `blackbird.py` + `data/`). Maigret y Holehe sí, pero arrastran dependencias en
   conflicto entre sí y con el servidor (`curl-cffi`, distintas versiones de
   `aiohttp`/`httpx`). Importarlas en el proceso del servidor contamina
   `uv.lock` y arriesga romper FastAPI.
-- **Decisión**: vendorizar las tres bajo `vendor/osint/` (git subtree, código no
-  editado) y crear un entorno virtual por herramienta con `uv`. El servidor las
-  invoca como subproceso con args validados y parsea su salida estructurada.
-  `pyproject.toml` del servidor solo suma `sse-starlette`.
+- **Decisión**: `vendor/osint/setup.sh` crea un entorno virtual por herramienta
+  con `uv` (versiones fijadas; Blackbird se clona, Maigret y Holehe se instalan
+  de PyPI). El repositorio versiona solo `setup.sh` y el README; los venvs y el
+  código de las herramientas quedan ignorados por git. El servidor las invoca
+  como subproceso con args validados y parsea su salida. `pyproject.toml` del
+  servidor no suma dependencias (el SSE usa `StreamingResponse` de Starlette).
 - **Consecuencias**: +aislamiento total de dependencias, +un solo contenedor,
-  +fácil de mockear. −el `Dockerfile` debe construir los tres venvs; −actualizar
-  una herramienta es un paso manual (subtree pull + revisar), documentado en
-  `vendor/osint/README.md`.
+  +`uv.lock` del servidor intacto, +fácil de mockear. −el `Dockerfile` debe
+  ejecutar `setup.sh` (con red) al construir la imagen; −actualizar una
+  herramienta es cambiar su versión en `setup.sh` y reejecutarlo; −la ejecución
+  real solo se valida a mano, no en CI.
 
 ### ADR-OSINT-03 · Holehe en lugar de Sherlock
 

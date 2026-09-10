@@ -17,3 +17,6 @@ dist
 build
 *.egg-info
 *.log
+vendor/osint/blackbird
+vendor/osint/maigret
+vendor/osint/holehe

@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     osint_engine_timeout_seconds: int = 120
     osint_max_output_bytes: int = 5_000_000
     osint_proxy_url: str = ""
+    # Raíz de las herramientas vendorizadas, cada una con su `.venv`.
+    # La prepara `vendor/osint/setup.sh`.
+    osint_vendor_dir: str = "vendor/osint"
 
     @property
     def docs_enabled(self) -> bool:
