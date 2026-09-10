@@ -4,8 +4,9 @@ from fee_server.core.config import Settings
 from fee_server.db.models import OsintScan, User
 from fee_server.db.session import session_scope
 from fee_server.domain.osint import engines as engines_module
-from fee_server.domain.osint import runner
-from fee_server.domain.osint.engines import ENGINE_ERROR, EngineRequest
+from fee_server.domain.osint import repository, runner
+from fee_server.domain.osint.engines import ENGINE_ERROR, ENGINE_OK, EngineRequest, EngineResult
+from fee_server.domain.osint.findings import CONFIRMED, POTENTIAL_MATCH, Finding
 from fee_server.domain.osint.schemas import ScanRequest
 from fee_server.domain.osint.service import ScanService
 
@@ -123,3 +124,31 @@ def test_scan_fails_when_engines_are_unavailable(client, settings, monkeypatch):
     with session_scope() as session:
         scan = session.get(OsintScan, scan_id)
         assert scan.status == "FAILED"
+
+
+class _NoiseEngine:
+    """Devuelve un hallazgo con un alias común, sin datos ricos y sin par."""
+
+    name = "blackbird"
+
+    def run(self, request: EngineRequest) -> EngineResult:
+        finding = Finding("Site", "other", None, "test", CONFIRMED, 80, ("blackbird",), {})
+        return EngineResult(self.name, ENGINE_OK, (finding,))
+
+
+def test_common_alias_without_corroboration_is_demoted_end_to_end(client, settings, monkeypatch):
+    scan_id = _make_scan(settings)
+    monkeypatch.setattr(runner, "build_engines", lambda _s: (_NoiseEngine(),))
+
+    runner.run_scan(
+        scan_id=scan_id,
+        engine_request=EngineRequest(usernames=("alias_de_prueba",)),
+        settings=settings,
+    )
+
+    with session_scope() as session:
+        scan = session.get(OsintScan, scan_id)
+        assert scan.status == "COMPLETED"
+        assert scan.exposure_score == 0  # ningún CONFIRMED sobrevive
+        findings = repository.list_findings(session, scan_id)
+        assert findings[0].status == POTENTIAL_MATCH

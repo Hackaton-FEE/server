@@ -9,7 +9,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from fee_server.db.models import OsintFinding, OsintScan
-from fee_server.domain.osint.findings import Finding
+from fee_server.domain.osint.findings import Finding, project_public_details
 from fee_server.util.time import utcnow
 
 
@@ -35,6 +35,12 @@ def delete_scan(session: Session, scan: OsintScan) -> None:
 
 
 def replace_findings(session: Session, scan_id: str, findings: Sequence[Finding]) -> None:
+    """Persiste los hallazgos.
+
+    Único punto del pipeline donde un `Finding` (rico, interno) se convierte
+    en fila de BD: aquí se aplica `project_public_details` para que solo lo
+    público llegue a disco y, por tanto, a cualquier lectura futura de la API.
+    """
     session.execute(delete(OsintFinding).where(OsintFinding.scan_id == scan_id))
     for finding in findings:
         session.add(
@@ -47,7 +53,7 @@ def replace_findings(session: Session, scan_id: str, findings: Sequence[Finding]
                 status=finding.status,
                 confidence=finding.confidence,
                 sources=list(finding.sources),
-                details=dict(finding.details),
+                details=project_public_details(finding.details),
             )
         )
 

@@ -12,12 +12,13 @@ from fee_server.core.config import Settings
 from fee_server.db.models import OsintScan
 from fee_server.db.session import session_scope
 from fee_server.domain.osint import repository
-from fee_server.domain.osint.correlation import correlate
+from fee_server.domain.osint.correlation import build_identity_graph, correlate
 from fee_server.domain.osint.engines import (
     ENGINE_ERROR,
     EngineRequest,
     build_engines,
 )
+from fee_server.domain.osint.noise import demote_unlinked_common_usernames
 from fee_server.domain.osint.normalize import merge_findings
 from fee_server.domain.osint.scoring import exposure_score, risk_level
 from fee_server.util.time import utcnow
@@ -66,6 +67,15 @@ def run_scan(*, scan_id: str, engine_request: EngineRequest, settings: Settings)
 
     try:
         merged = merge_findings(all_findings)
+        # Dos grafos con propósitos distintos, no un cálculo duplicado: este se
+        # construye sobre el conjunto crudo (antes de degradar) para que un
+        # hallazgo de ruido pueda salvarse si otra cuenta lo corrobora;
+        # `correlate()` abajo recalcula el grafo sobre el conjunto ya limpio,
+        # que es el que se persiste. No reusar este primer grafo para la
+        # correlación final: seguiría incluyendo nodos que la degradación
+        # dejó fuera de `CONFIRMED` (y por tanto fuera de `build_identity_graph`).
+        graph = build_identity_graph(merged)
+        merged = demote_unlinked_common_usernames(merged, graph)
         score = exposure_score(merged)
         correlation = correlate(merged, provided_email=engine_request.email).to_dict()
     except Exception:  # noqa: BLE001 - la normalización no debe dejar el escaneo colgado

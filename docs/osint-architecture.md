@@ -571,9 +571,11 @@ altera el `exposure_score` (previsto para una fase posterior). Tres señales:
 
 - **Grafo de identidad**: un nodo por cuenta `CONFIRMED` con username; una arista
   entre dos cuentas que comparten un valor casefold no vacío de `full_name`,
-  `location`, `company` o `username`. Las componentes conexas de tamaño ≥ 2 son
-  los *clústeres* de identidad. Responde "¿qué cuentas están demostrablemente
-  ligadas a la misma persona?".
+  `location`, `company` o `username`, **o** que se referencian explícitamente
+  vía `linked_usernames` (arista `shared=("linked_usernames",)`, munición de
+  pivoteo que Maigret ya calcula en `ids_links`/`ids_usernames`). Las
+  componentes conexas de tamaño ≥ 2 son los *clústeres* de identidad. Responde
+  "¿qué cuentas están demostrablemente ligadas a la misma persona?".
 - **Timeline de antigüedad**: a partir de `creation_date` (ISO 8601; una fecha
   ilegible se ignora sin romper). Devuelve entradas ordenadas y `oldest`/`newest`,
   `span_years` y `dormant_old_accounts` (creadas hace ≥ 5 años).
@@ -584,6 +586,52 @@ altera el `exposure_score` (previsto para una fase posterior). Tres señales:
 Privacidad: no introduce datos crudos nuevos (solo cruza `details` ya
 persistidos), no registra nada, y se borra junto con los hallazgos al caducar
 el escaneo (§7).
+
+### 9.6 Dos fronteras de `details` (`findings.py`)
+
+`DETAIL_KEYS` es el límite de **"esto no es basura"**: todo lo que entra ahí
+fluye por el pipeline interno (`normalize → merge → grafo de identidad →
+reducción de ruido → score`). No todo lo que pasa ese primer filtro es
+apropiado para mostrarlo a un humano en la app — `linked_usernames` (cuentas
+relacionadas que Maigret descubre, munición de pivoteo) es deliberadamente
+**interno**: alimenta el grafo, pero su versión "filtrada para la app" es la
+arista ya procesada del grafo, no el dato crudo.
+
+`PUBLIC_DETAIL_KEYS = DETAIL_KEYS - {"linked_usernames"}` es lo único que sale
+del sistema. Se aplica en un único punto,
+`repository.py::replace_findings` (`project_public_details`), justo antes de
+escribir `OsintFinding.details` — como `service.py::build_results` siempre
+reconstruye `Finding` a partir de filas ya persistidas, filtrar ahí basta para
+que ninguna lectura futura (polling, `GET .../results`) vuelva a exponer un
+campo interno.
+
+### 9.7 Reducción de ruido (`noise.py`)
+
+"La cuenta existe" no prueba "es tuya" cuando el alias es genérico — un
+`CONFIRMED` se degrada a `POTENTIAL_MATCH` **solo si fallan las tres
+condiciones a la vez** (regla conservadora):
+
+1. el alias es común (heurística: en una stoplist pequeña, < 8 caracteres, o
+   sin dígitos/separadores — `is_common_username`, deliberadamente imperfecta:
+   el respaldo real son las otras dos condiciones);
+2. no trae ningún detalle rico **autodescriptivo** (`full_name`, `location`,
+   `account_id`, `company`, `following_count`, `repos_count`, `bio_links`).
+   `linked_usernames` queda fuera de esta lista a propósito: es una
+   afirmación del propio hallazgo ("enlazo a esta otra cuenta"), no un dato
+   sobre la cuenta en sí — sin verificar que esa cuenta exista de verdad en
+   el escaneo no prueba nada, y contarlo aquí dejaría que cualquier hallazgo
+   se auto-declarara "rico" sin corroboración genuina;
+3. no está enlazado a ninguna otra cuenta del escaneo en el grafo de
+   identidad — **excluyendo** las aristas que solo comparten `username` (dos
+   alias comunes idénticos no pueden "corroborarse" el uno al otro, sería
+   circular). Esta es la única vía por la que `linked_usernames` sí cuenta:
+   cuando forma una arista real (`shared=("linked_usernames",)`) contra otra
+   cuenta que de verdad está en el escaneo.
+
+`ScanRunner.run_scan` construye el grafo sobre el conjunto crudo (para que un
+hallazgo pueda salvarse si otra cuenta lo corrobora), degrada, y **luego**
+calcula `exposure_score` y recalcula la correlación final sobre el conjunto ya
+limpio.
 
 ---
 
@@ -644,7 +692,9 @@ Cada fase es un PR pequeño hacia `main` con aceptación observable.
 | Fase | Contenido | Aceptación |
 | --- | --- | --- |
 | **D1 · Capa de correlación** ✅ | `correlation.py` (grafo de identidad, timeline, contactos reconstruidos), migración `0003` (`OsintScan.correlation`), campo `correlation` en `DashboardResult`. Puro, sin red ni deps. Ver §9.5 | `test_correlation` verde; `results` incluye `correlation`; 143 pruebas; cobertura 96 % |
+| **D1.5 · Extracción rica + reducción de ruido** ✅ | `DETAIL_KEYS` ampliado (`following_count`/`repos_count`/`gists_count`/`linked_usernames`), `bio_links`/`url` de Holehe por fin poblados, arista de referencia explícita en el grafo, `noise.py` (regla de tres condiciones), frontera `PUBLIC_DETAIL_KEYS`. Ver §9.6-9.7 | `test_noise`/`test_findings` verdes; `linked_usernames` nunca sale en `results`; 228 pruebas; cobertura 96 % |
 | **D2 · Fuentes externas** | Have I Been Pwned (brechas), Gravatar/GitHub por email, como motores + adaptadores | contadores de brechas en `results`; degradación limpia sin API key |
+| **D2.5 · Pivoteo real** | `ScanRunner` relanza motores con `linked_usernames`/alias descubiertos (profundidad 1, `--no-recursion`); hallazgos pivotados sujetos a la regla de ruido desde el primer momento | pivoteo verificado end-to-end; sin recursión sin límite |
 | **D3 · Síntesis con LLM** | Informe narrativo y recomendaciones priorizadas sobre los `Finding[]`, tras flag de config y consentimiento; cacheado por hash de entrada; camino sin-LLM por defecto | opcional y degradable; sin PII en logs |
 | **3 · Hardening** | Proxy, *backoff*/circuit-breaker, `purge_expired()`, cuotas por cuenta, cifrado del identificador, `DELETE` | `docs/architecture.md` y `docs/auth-contract.md`/OpenAPI al día; checklist de seguridad |
 | **4 · Opcional** | Catálogo JustDelete.me para remediación; ExifTool + vector archivos; recursión profundidad 2 | fuera del alcance comprometido |

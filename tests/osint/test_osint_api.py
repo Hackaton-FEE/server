@@ -1,5 +1,10 @@
 """Contrato HTTP del módulo OSINT con motores simulados (sin red)."""
 
+import json
+
+from fee_server.domain.osint import runner
+from fee_server.domain.osint.engines import ENGINE_OK, EngineResult
+from fee_server.domain.osint.findings import CONFIRMED, Finding
 from tests.osint.conftest import VALID_USERNAME_SCAN
 
 SCANS = "/api/v1/osint/scans"
@@ -43,6 +48,33 @@ def test_full_scan_flow_reaches_a_dashboard(client, headers):
     assert correlation is not None
     assert correlation["identity_graph"]["nodes"]
     assert correlation["timeline"]["oldest_platform"] == "GitHub"
+
+
+class _LinkedUsernamesEngine:
+    """Simula un motor que descubre `linked_usernames` (dato interno)."""
+
+    name = "maigret"
+
+    def run(self, request):
+        finding = Finding(
+            "GitHub", "coding", None, "alias_de_prueba", CONFIRMED, 90, ("maigret",),
+            {"full_name": "Ada Lovelace", "linked_usernames": ["otra_cuenta"]},
+        )
+        return EngineResult(self.name, ENGINE_OK, (finding,))
+
+
+def test_internal_only_details_never_reach_the_api_response(client, headers, monkeypatch):
+    monkeypatch.setattr(runner, "build_engines", lambda _s: (_LinkedUsernamesEngine(),))
+
+    scan_id = _start(client, headers).json()["scan_id"]
+    dashboard = client.get(f"{SCANS}/{scan_id}/results", headers=headers).json()
+
+    # `linked_usernames` alimentó el grafo de identidad, pero nunca debe
+    # aparecer como campo crudo en ningún `details` de la respuesta.
+    assert "linked_usernames" not in json.dumps(dashboard)
+    items = [item for cat in dashboard["categories"] for item in cat["items"]]
+    github = next(item for item in items if item["platform"] == "GitHub")
+    assert github["details"]["full_name"] == "Ada Lovelace"
 
 
 def test_github_is_merged_across_engines(client, headers):

@@ -44,6 +44,30 @@ def test_shared_full_name_links_two_accounts():
     assert set(graph.clusters[0]) == {"GitHub:gh", "GitLab:gl"}
 
 
+def test_explicit_username_reference_links_two_accounts():
+    findings = [
+        _finding("GitHub", username="richprofile99", linked_usernames=["gl_handle"]),
+        _finding("GitLab", username="gl_handle"),
+    ]
+
+    graph = build_identity_graph(findings)
+
+    assert len(graph.edges) == 1
+    assert graph.edges[0].shared == ("linked_usernames",)
+    assert set(graph.clusters[0]) == {"GitHub:richprofile99", "GitLab:gl_handle"}
+
+
+def test_sharing_only_the_username_key_does_not_add_linked_usernames_evidence():
+    findings = [
+        _finding("GitHub", username="samealias"),
+        _finding("GitLab", username="samealias"),
+    ]
+
+    graph = build_identity_graph(findings)
+
+    assert graph.edges[0].shared == ("username",)
+
+
 def test_accounts_without_common_attributes_are_not_linked():
     findings = [
         _finding("GitHub", username="one", full_name="Ada Lovelace"),

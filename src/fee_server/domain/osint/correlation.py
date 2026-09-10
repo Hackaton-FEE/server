@@ -150,7 +150,7 @@ class CorrelationResult:
 # --- Grafo de identidad -------------------------------------------------
 
 
-def _node_id(finding: Finding) -> str:
+def node_id(finding: Finding) -> str:
     return f"{finding.platform}:{finding.username or ''}"
 
 
@@ -167,6 +167,35 @@ def _linking_values(finding: Finding) -> dict[str, str]:
 
 def _shared_keys(a: dict[str, str], b: dict[str, str]) -> tuple[str, ...]:
     return tuple(sorted(key for key in a if key in b and a[key] == b[key]))
+
+
+def _linked_usernames(finding: Finding) -> frozenset[str]:
+    raw = finding.details.get("linked_usernames")
+    if not isinstance(raw, list):
+        return frozenset()
+    return frozenset(str(u).strip().casefold() for u in raw if str(u).strip())
+
+
+def _references(left: Finding, right: Finding) -> bool:
+    """¿Alguno menciona explícitamente el username del otro (`ids_usernames`)?
+
+    A diferencia de `_shared_keys` (atributos simétricos coincidentes), esto es
+    una referencia dirigida: A puede enlazar a B sin que B enlace a A.
+    """
+    left_username = (left.username or "").strip().casefold()
+    right_username = (right.username or "").strip().casefold()
+    if not left_username or not right_username:
+        return False
+    return right_username in _linked_usernames(left) or left_username in _linked_usernames(right)
+
+
+def _edge_evidence(
+    left: Finding, right: Finding, left_values: dict[str, str], right_values: dict[str, str]
+) -> tuple[str, ...]:
+    keys = set(_shared_keys(left_values, right_values))
+    if _references(left, right):
+        keys.add("linked_usernames")
+    return tuple(sorted(keys))
 
 
 class _UnionFind:
@@ -196,14 +225,17 @@ def build_identity_graph(findings: Sequence[Finding]) -> IdentityGraph:
     if not confirmed:
         return IdentityGraph()
 
-    nodes = tuple(IdentityNode(_node_id(f), f.platform, f.username, f.category) for f in confirmed)
-    values = {_node_id(f): _linking_values(f) for f in confirmed}
+    nodes = tuple(IdentityNode(node_id(f), f.platform, f.username, f.category) for f in confirmed)
+    values = {node_id(f): _linking_values(f) for f in confirmed}
+    finding_by_id = dict(zip((n.id for n in nodes), confirmed, strict=True))
 
     edges: list[IdentityEdge] = []
     union = _UnionFind([n.id for n in nodes])
     for i, left in enumerate(nodes):
         for right in nodes[i + 1 :]:
-            shared = _shared_keys(values[left.id], values[right.id])
+            shared = _edge_evidence(
+                finding_by_id[left.id], finding_by_id[right.id], values[left.id], values[right.id]
+            )
             if shared:
                 edges.append(IdentityEdge(left.id, right.id, shared))
                 union.union(left.id, right.id)
