@@ -1,0 +1,132 @@
+# Standalone file: do not layer over the development compose.yaml.
+x-api-environment: &api-environment
+  FEE_ENVIRONMENT: production
+  FEE_DATABASE_URL: postgresql+psycopg://fee:${POSTGRES_PASSWORD:?Generate .env.production first}@db:5432/fee
+  FEE_JWT_SECRET: ${FEE_JWT_SECRET:?Generate .env.production first}
+  FEE_WEBAUTHN_RP_ID: ${FEE_WEBAUTHN_RP_ID:-backosisnt.ici-labs.com}
+  FEE_WEBAUTHN_RP_NAME: ${FEE_WEBAUTHN_RP_NAME:-FEE}
+  FEE_WEBAUTHN_ORIGINS: ${FEE_WEBAUTHN_ORIGINS:-["https://backosisnt.ici-labs.com"]}
+  FEE_ANDROID_PACKAGE_NAME: ${FEE_ANDROID_PACKAGE_NAME:-}
+  FEE_ANDROID_SHA256_FINGERPRINTS: ${FEE_ANDROID_SHA256_FINGERPRINTS:-[]}
+  FEE_IOS_APP_IDS: ${FEE_IOS_APP_IDS:-[]}
+  FEE_OSINT_ENGINE_MODE: ${FEE_OSINT_ENGINE_MODE:-real}
+  FEE_CORS_ORIGINS: ${FEE_CORS_ORIGINS:-[]}
+
+x-logging: &logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-api: &api
+  image: fee-server:${FEE_IMAGE_TAG:-oracle-local}
+  build:
+    context: .
+    args:
+      OSINT_REAL: ${FEE_BUILD_OSINT_REAL:-1}
+  environment: *api-environment
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  logging: *logging
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: fee
+      POSTGRES_USER: fee
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Generate .env.production first}
+    command: [postgres, -c, log_statement=none, -c, log_min_error_statement=panic]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [database]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U fee -d fee]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
+  migrate:
+    <<: *api
+    profiles: [tools]
+    command: [alembic, upgrade, head]
+    networks: [database]
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
+  api:
+    <<: *api
+    restart: unless-stopped
+    networks:
+      database:
+      proxy:
+        ipv4_address: ${FEE_API_IP:-172.30.80.3}
+    depends_on:
+      db:
+        condition: service_healthy
+    command:
+      - uvicorn
+      - fee_server.main:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --no-access-log
+      - --proxy-headers
+      - --forwarded-allow-ips
+      - ${FEE_PROXY_IP:-172.30.80.2}
+
+  cloudflared:
+    image: ${FEE_TUNNEL_IMAGE:-cloudflare/cloudflared:latest}
+    restart: unless-stopped
+    user: "10001:10001"
+    environment:
+      TUNNEL_TOKEN_FILE: /run/secrets/cloudflare_tunnel_token
+    secrets: [cloudflare_tunnel_token]
+    command:
+      - tunnel
+      - --no-autoupdate
+      - --loglevel
+      - fatal
+      - --metrics
+      - 127.0.0.1:2000
+      - run
+    networks:
+      proxy:
+        ipv4_address: ${FEE_PROXY_IP:-172.30.80.2}
+    depends_on:
+      api:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, cloudflared, tunnel, --metrics, "127.0.0.1:2000", ready]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging: *logging
+
+networks:
+  database:
+    internal: true
+  proxy:
+    ipam:
+      config:
+        - subnet: ${FEE_PROXY_SUBNET:-172.30.80.0/28}
+
+volumes:
+  postgres_data:
+
+secrets:
+  cloudflare_tunnel_token:
+    file: ./.env.cloudflared.token
