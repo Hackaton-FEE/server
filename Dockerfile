@@ -24,7 +24,8 @@ RUN if [ "$OSINT_REAL" = "1" ]; then \
         apt-get update && apt-get install -y --no-install-recommends git \
         && rm -rf /var/lib/apt/lists/* \
         && ./vendor/osint/setup.sh ; \
-    fi
+    fi \
+    && chown -R 10001:10001 /app
 
 USER 10001:10001
 EXPOSE 8000
