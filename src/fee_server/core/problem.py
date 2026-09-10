@@ -67,6 +67,19 @@ class InvalidVerificationCodeError(VerificationError):
     detail = "El código de verificación no es correcto."
 
 
+class AssistantError(ProblemError):
+    """Base de los errores del asistente conversacional."""
+
+    status_code: int = status.HTTP_400_BAD_REQUEST
+    code: str = "assistant-error"
+    detail: str = "No fue posible procesar la conversación."
+
+
+class InvalidConversationError(AssistantError):
+    code = "invalid-conversation"
+    detail = "La conversación no es válida: revisa los mensajes enviados."
+
+
 class OsintError(ProblemError):
     """Base de los errores del motor OSINT."""
 

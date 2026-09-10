@@ -10,6 +10,7 @@ from fee_server.core.problem import InvalidSessionError
 from fee_server.core.security.tokens import InvalidAccessToken, read_access_token
 from fee_server.db.models import User
 from fee_server.db.session import get_session
+from fee_server.domain.assistant.service import AssistantService
 from fee_server.domain.auth import repository
 from fee_server.domain.auth.service import AuthService
 from fee_server.domain.osint.service import ScanService
@@ -43,6 +44,13 @@ def get_verification_service(settings: SettingsDep) -> VerificationService:
 
 
 VerificationServiceDep = Annotated[VerificationService, Depends(get_verification_service)]
+
+
+def get_assistant_service(settings: SettingsDep) -> AssistantService:
+    return AssistantService(settings)
+
+
+AssistantServiceDep = Annotated[AssistantService, Depends(get_assistant_service)]
 
 
 def get_current_user(request: Request, session: SessionDep, settings: SettingsDep) -> User:

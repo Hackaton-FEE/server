@@ -22,6 +22,8 @@ La factory es `src/fee_server/main.py:create_app`. Las pruebas de comportamiento
 | `GET /api/v1/osint/scans/{id}/results` | HTTP 200, proyección para el dashboard (Exposure Score y categorías). |
 | `GET /api/v1/osint/scans/{id}/events` | HTTP 200, stream SSE de progreso. |
 | `DELETE /api/v1/osint/scans/{id}` | HTTP 204, el usuario borra su escaneo. |
+| `POST /api/v1/verification/email/request` · `.../confirm` | HTTP 200, verificación de correo (consentimiento para escanear a un tercero); sin estado, sin BD. |
+| `POST /api/v1/assistant/chat` | HTTP 200, stream SSE del asistente de higiene de privacidad (LLM); sin persistencia. |
 
 El contrato completo de autenticación, con ejemplos y notas para el cliente Flutter, está en [auth-contract.md](auth-contract.md).
 
@@ -40,6 +42,28 @@ El registro y el inicio de sesión usan **passkeys FIDO2/WebAuthn** nativas del 
 La persistencia es SQLAlchemy sobre SQLite en local y PostgreSQL/Supabase en despliegue; el esquema lo gestiona Alembic (`migrations/`). Crear la app (`create_app`) prepara el engine pero no abre conexiones ni ejecuta trabajo externo.
 
 El scaffold sigue sin colas, captura de evidencia ni envíos externos. El cliente `Hackaton-FEE/app` (Flutter) todavía no consume esta API.
+
+## Asistente de higiene de privacidad (LLM)
+
+`POST /api/v1/assistant/chat` (`domain/assistant/`) es un chat por streaming
+(SSE) que guía al usuario en la remediación de su huella digital. Diseño:
+
+- **Sin persistencia**: el cliente reenvía el historial de la conversación
+  actual en cada petición; el servidor no lo guarda. Antepone su propio
+  `system prompt` fijo (`domain/assistant/prompts.py`); el cliente nunca puede
+  mandar un mensaje con rol `system`.
+- **`fake`/`real`** (`FEE_ASSISTANT_MODE`, por defecto `fake` y forzado en
+  `test`): igual patrón que los motores OSINT. En `real` usa un proveedor
+  compatible con la API de OpenAI (`openai.AsyncOpenAI`) — NVIDIA por defecto
+  (`FEE_ASSISTANT_BASE_URL`, `FEE_ASSISTANT_MODEL`, `FEE_ASSISTANT_API_KEY`).
+- **Egreso a un tercero**: en modo real, el contenido de la conversación viaja
+  por HTTPS al proveedor configurado. Sin datos de escaneos inyectados.
+- **Límites de coste/abuso**: `@limiter.limit("15/minute")`, cotas
+  configurables de nº de mensajes y caracteres por mensaje
+  (`FEE_ASSISTANT_MAX_MESSAGES`, `FEE_ASSISTANT_MAX_MESSAGE_CHARS`) y de
+  tokens de salida (`FEE_ASSISTANT_MAX_OUTPUT_TOKENS`).
+- Un fallo del proveedor a mitad de la respuesta no puede cambiar el código
+  HTTP (ya es `200`): se emite `event: error` y se cierra el stream.
 
 ## Límites de responsabilidad
 

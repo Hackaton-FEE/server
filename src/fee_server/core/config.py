@@ -66,6 +66,18 @@ class Settings(BaseSettings):
     verification_code_ttl_seconds: int = 600
     osint_consent_ttl_seconds: int = 3600
 
+    # --- Asistente de higiene de privacidad (LLM) ---
+    # `fake`: respuesta determinista sin red; `real`: proveedor compatible con
+    # la API de OpenAI (NVIDIA por defecto). Ver `domain/assistant/`.
+    assistant_mode: Literal["fake", "real"] = "fake"
+    assistant_api_key: str = ""
+    assistant_base_url: str = "https://integrate.api.nvidia.com/v1"
+    assistant_model: str = "meta/muse-glimmer-30b"
+    assistant_max_messages: int = 20
+    assistant_max_message_chars: int = 4000
+    assistant_max_output_tokens: int = 1024
+    assistant_timeout_seconds: int = 30
+
     @property
     def docs_enabled(self) -> bool:
         return self.environment != "production"
@@ -74,6 +86,11 @@ class Settings(BaseSettings):
     def osint_uses_real_engines(self) -> bool:
         # El entorno de pruebas nunca ejecuta herramientas reales.
         return self.osint_engine_mode == "real" and self.environment != "test"
+
+    @property
+    def assistant_uses_real_gateway(self) -> bool:
+        # El entorno de pruebas nunca llama al proveedor real.
+        return self.assistant_mode == "real" and self.environment != "test"
 
     @field_validator("jwt_secret")
     @classmethod
@@ -88,4 +105,16 @@ class Settings(BaseSettings):
     def _production_needs_real_secret(self) -> "Settings":
         if self.environment == "production" and self.jwt_secret == DEV_INSECURE_JWT_SECRET:
             raise ValueError("Define FEE_JWT_SECRET con un valor propio en producción")
+        return self
+
+    @model_validator(mode="after")
+    def _production_assistant_needs_api_key(self) -> "Settings":
+        if (
+            self.environment == "production"
+            and self.assistant_mode == "real"
+            and not self.assistant_api_key
+        ):
+            raise ValueError(
+                "Define FEE_ASSISTANT_API_KEY para usar FEE_ASSISTANT_MODE=real en producción"
+            )
         return self

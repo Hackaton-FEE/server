@@ -56,3 +56,37 @@ def test_production_accepts_a_real_secret(monkeypatch):
 
     assert settings.environment == "production"
     assert settings.docs_enabled is False
+
+
+def test_assistant_defaults_to_simulated_gateway():
+    settings = Settings()
+
+    assert settings.assistant_mode == "fake"
+    assert settings.assistant_uses_real_gateway is False
+
+
+def test_assistant_real_mode_is_disabled_under_test_environment(monkeypatch):
+    monkeypatch.setenv("FEE_ENVIRONMENT", "test")
+    monkeypatch.setenv("FEE_ASSISTANT_MODE", "real")
+
+    assert Settings().assistant_uses_real_gateway is False
+
+
+def test_production_refuses_real_assistant_without_an_api_key(monkeypatch):
+    monkeypatch.setenv("FEE_ENVIRONMENT", "production")
+    monkeypatch.setenv("FEE_JWT_SECRET", "a-proper-production-secret-value-32chars")
+    monkeypatch.setenv("FEE_ASSISTANT_MODE", "real")
+
+    with pytest.raises(ValidationError, match="ASSISTANT_API_KEY"):
+        Settings()
+
+
+def test_production_accepts_real_assistant_with_an_api_key(monkeypatch):
+    monkeypatch.setenv("FEE_ENVIRONMENT", "production")
+    monkeypatch.setenv("FEE_JWT_SECRET", "a-proper-production-secret-value-32chars")
+    monkeypatch.setenv("FEE_ASSISTANT_MODE", "real")
+    monkeypatch.setenv("FEE_ASSISTANT_API_KEY", "nvapi-test-key")
+
+    settings = Settings()
+
+    assert settings.assistant_uses_real_gateway is True

@@ -6,7 +6,6 @@ o por el stream SSE (`GET .../{id}/events`). Ver `docs/osint-architecture.md`.
 """
 
 import asyncio
-import json
 from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, BackgroundTasks, Request, Response, status
@@ -14,6 +13,7 @@ from fastapi.responses import StreamingResponse
 
 from fee_server.api.dependencies import CurrentUserDep, OsintServiceDep, SettingsDep
 from fee_server.core.rate_limit import limiter
+from fee_server.core.sse import format_event
 from fee_server.db.models import OsintScan
 from fee_server.db.session import session_scope
 from fee_server.domain.osint import repository
@@ -102,10 +102,6 @@ async def stream_scan_events(
     )
 
 
-def _sse(event: str, data: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
-
-
 def _snapshot(scan_id: str) -> dict | None:
     with session_scope() as session:
         scan: OsintScan | None = repository.get_scan(session, scan_id)
@@ -124,13 +120,13 @@ async def _event_stream(scan_id: str) -> AsyncIterator[str]:
     for _ in range(_SSE_MAX_POLLS):
         snapshot = _snapshot(scan_id)
         if snapshot is None:
-            yield _sse("error", {"detail": "scan-not-found"})
+            yield format_event("error", {"detail": "scan-not-found"})
             return
         if snapshot != last:
-            yield _sse("progress", snapshot)
+            yield format_event("progress", snapshot)
             last = snapshot
         if snapshot["status"] in TERMINAL_STATUSES:
-            yield _sse("done", snapshot)
+            yield format_event("done", snapshot)
             return
         await asyncio.sleep(_SSE_POLL_SECONDS)
-    yield _sse("error", {"detail": "stream-timeout"})
+    yield format_event("error", {"detail": "stream-timeout"})
