@@ -20,3 +20,4 @@ build
 vendor/osint/blackbird
 vendor/osint/maigret
 vendor/osint/holehe
+vendor/osint/ignorant

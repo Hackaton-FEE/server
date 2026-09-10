@@ -95,6 +95,53 @@ def test_maigret_engine_parses_the_generated_report(tmp_path, monkeypatch):
     assert github.details["account_id"] == "1024025"
 
 
+@pytest.mark.parametrize(
+    "engine, tool, executables, engine_request, cli_proxy",
+    [
+        (real.BlackbirdEngine, "blackbird", ("python",), EngineRequest(usernames=("alias",)), True),
+        (real.MaigretEngine, "maigret", ("maigret",), EngineRequest(usernames=("alias",)), False),
+        (
+            real.HoleheEngine,
+            "holehe",
+            ("holehe",),
+            EngineRequest(usernames=(), email="persona@example.com"),
+            False,
+        ),
+        (
+            real.IgnorantEngine,
+            "ignorant",
+            ("ignorant",),
+            EngineRequest(usernames=(), phone="+34611223344"),
+            False,
+        ),
+    ],
+)
+def test_engines_use_the_supported_proxy_transport(
+    tmp_path, monkeypatch, engine, tool, executables, engine_request, cli_proxy
+):
+    _install_stub_tool(tmp_path, tool, *executables)
+    proxy = "http://example-user:example-password@proxy.example:7000"
+    settings = Settings(osint_vendor_dir=str(tmp_path), osint_proxy_url=proxy)
+    calls = []
+
+    def fake_run_tool(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return ToolRun(1, "", "", timed_out=False, truncated=False)
+
+    monkeypatch.setattr(real, "run_tool", fake_run_tool)
+    engine(settings).run(engine_request)
+
+    assert len(calls) == 1
+    argv, kwargs = calls[0]
+    assert kwargs["proxy_url"] == proxy
+    assert ("--proxy" in argv) is cli_proxy
+    # Maigret no debe combinar su ProxyConnector con el proxy de trust_env.
+    if cli_proxy:
+        assert argv[argv.index("--proxy") + 1] == proxy
+    else:
+        assert proxy not in argv
+
+
 def test_holehe_engine_parses_the_generated_csv(tmp_path, monkeypatch):
     _install_stub_tool(tmp_path, "holehe", "holehe")
     settings = _real_settings(str(tmp_path))
@@ -127,9 +174,7 @@ def test_ignorant_engine_parses_stdout(tmp_path, monkeypatch):
 
     monkeypatch.setattr(real, "run_tool", fake_run_tool)
 
-    result = real.IgnorantEngine(settings).run(
-        EngineRequest(usernames=(), phone="+34611223344")
-    )
+    result = real.IgnorantEngine(settings).run(EngineRequest(usernames=(), phone="+34611223344"))
 
     platforms = {f.platform: f for f in result.findings}
     assert platforms["instagram"].status == CONFIRMED

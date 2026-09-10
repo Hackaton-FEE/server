@@ -90,3 +90,40 @@ def test_production_accepts_real_assistant_with_an_api_key(monkeypatch):
     settings = Settings()
 
     assert settings.assistant_uses_real_gateway is True
+
+
+def test_proxy_credentials_are_loaded_without_exposing_them(monkeypatch):
+    proxy = "http://example-user:example-password@gate.decodo.com:7000"
+    monkeypatch.setenv("FEE_OSINT_PROXY_URL", proxy)
+
+    settings = Settings()
+
+    assert settings.osint_proxy_url.get_secret_value() == proxy
+    assert "example-password" not in repr(settings)
+    assert "example-password" not in settings.model_dump_json()
+
+
+@pytest.mark.parametrize(
+    "proxy",
+    [
+        "https://example-user:example-password@proxy.example:7000",
+        "socks5://example-user:example-password@proxy.example:7000",
+        "http://example-user:example-password@proxy.example:99999",
+        "http://example-user:example-password@proxy.example:7000/path",
+        "http://example-user:example-password@proxy.example:7000?query=secret",
+        "http://example-user:example-password@proxy.example:7000\n",
+        "http://example-user@proxy.example:7000",
+        "proxy.example:7000",
+    ],
+)
+def test_invalid_proxy_fails_at_startup_without_exposing_credentials(proxy):
+    with pytest.raises(ValidationError, match="FEE_OSINT_PROXY_URL") as error:
+        Settings(osint_proxy_url=proxy)
+
+    assert "example-password" not in str(error.value)
+
+
+def test_proxy_can_be_disabled_or_use_ip_allowlisting():
+    assert Settings(osint_proxy_url="").osint_proxy_url.get_secret_value() == ""
+    proxy = "http://proxy.example:7000"
+    assert Settings(osint_proxy_url=proxy).osint_proxy_url.get_secret_value() == proxy

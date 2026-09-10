@@ -93,9 +93,7 @@ def _checkpoint(scan_id: str, *, progress: int, engines: dict) -> None:
         scan.engines = dict(engines)
 
 
-def _complete(
-    scan_id: str, findings: list, score: int, engines: dict, correlation: dict
-) -> None:
+def _complete(scan_id: str, findings: list, score: int, engines: dict, correlation: dict) -> None:
     with session_scope() as session:
         scan = repository.get_scan(session, scan_id)
         if scan is None or scan.status in TERMINAL_STATUSES:

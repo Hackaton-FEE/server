@@ -1,8 +1,9 @@
 """Configuración validada desde variables de entorno."""
 
 from typing import Literal
+from urllib.parse import urlsplit
 
-from pydantic import field_validator, model_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Valor obvio e inseguro: sirve para desarrollo local sin configurar nada.
@@ -13,7 +14,7 @@ MIN_JWT_SECRET_LENGTH = 32
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="FEE_", frozen=True)
+    model_config = SettingsConfigDict(env_prefix="FEE_", frozen=True, hide_input_in_errors=True)
 
     environment: Literal["development", "test", "production"] = "development"
 
@@ -53,7 +54,7 @@ class Settings(BaseSettings):
     osint_max_concurrent_scans: int = 2
     osint_engine_timeout_seconds: int = 120
     osint_max_output_bytes: int = 5_000_000
-    osint_proxy_url: str = ""
+    osint_proxy_url: SecretStr = SecretStr("")
     # Raíz de las herramientas vendorizadas, cada una con su `.venv`.
     # La prepara `vendor/osint/setup.sh`.
     osint_vendor_dir: str = "vendor/osint"
@@ -91,6 +92,34 @@ class Settings(BaseSettings):
     def assistant_uses_real_gateway(self) -> bool:
         # El entorno de pruebas nunca llama al proveedor real.
         return self.assistant_mode == "real" and self.environment != "test"
+
+    @field_validator("osint_proxy_url")
+    @classmethod
+    def _valid_osint_proxy(cls, value: SecretStr) -> SecretStr:
+        raw = value.get_secret_value()
+        if not raw:
+            return value
+        message = "FEE_OSINT_PROXY_URL debe ser http://[usuario:password@]host:puerto"
+        try:
+            parsed = urlsplit(raw)
+            valid = (
+                parsed.scheme == "http"
+                and bool(parsed.hostname)
+                and parsed.port is not None
+                and 1 <= parsed.port <= 65535
+                and parsed.path in ("", "/")
+                and not parsed.query
+                and not parsed.fragment
+                and not any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in raw)
+                and (parsed.username is None or bool(parsed.username and parsed.password))
+            )
+        except ValueError:
+            raise ValueError(message) from None
+        if not valid:
+            # aiohttp trust_env ignora HTTPS/SOCKS; aceptarlos permitiría salida
+            # directa en Maigret. HTTP es el transporte común de los 4 motores.
+            raise ValueError(message)
+        return value
 
     @field_validator("jwt_secret")
     @classmethod
