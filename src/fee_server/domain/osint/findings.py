@@ -31,10 +31,7 @@ CATEGORIES: Final[tuple[str, ...]] = (
     "other",
 )
 
-# Claves permitidas dentro de `details`. Todo lo demás se descarta al normalizar.
-# Es la frontera "no es basura": lo que entra aquí fluye por todo el pipeline
-# interno (merge, grafo de identidad, reducción de ruido, score). No implica
-# que todo esto se muestre en la app — ver `PUBLIC_DETAIL_KEYS`.
+# Claves de `details` que circulan por el pipeline interno; el resto se descarta.
 DETAIL_KEYS: Final[frozenset[str]] = frozenset(
     {
         "account_id",
@@ -58,13 +55,10 @@ DETAIL_KEYS: Final[frozenset[str]] = frozenset(
     }
 )
 
-# Claves internas: útiles para el grafo de identidad (`correlation.py`) y la
-# reducción de ruido, pero nunca se persisten ni se devuelven a la app — su
-# versión "filtrada" es la arista del grafo, no el dato crudo.
+# Solo para correlación y reducción de ruido; nunca se persisten ni se exponen.
 _INTERNAL_ONLY_DETAIL_KEYS: Final[frozenset[str]] = frozenset({"linked_usernames"})
 
-# Lo único que sale del sistema (persistencia y respuesta HTTP). Ver
-# `repository.py::replace_findings`, el único punto donde se aplica.
+# Lo único que se persiste y se devuelve por HTTP.
 PUBLIC_DETAIL_KEYS: Final[frozenset[str]] = DETAIL_KEYS - _INTERNAL_ONLY_DETAIL_KEYS
 
 MAX_CONFIDENCE: Final = 100

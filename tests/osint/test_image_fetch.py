@@ -46,9 +46,7 @@ class _Server(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"too-late")
         elif self.path == "/trickle.jpg":
-            # Cada lectura individual es rápida (no dispara el timeout por
-            # operación de httpx), pero la descarga completa se alarga más
-            # allá del presupuesto — solo el tope de reloj de pared lo corta.
+            # Cada lectura cabe en el timeout de httpx; el total lo excede.
             self.send_response(200)
             self.send_header("Content-Type", "image/jpeg")
             self.end_headers()
@@ -105,8 +103,6 @@ def test_gives_up_after_the_timeout(local_server):
 
 
 def test_gives_up_on_a_download_that_trickles_past_the_wall_clock_budget(local_server):
-    # Ninguna lectura individual excede el timeout por-operación de httpx;
-    # solo el tope de reloj de pared explícito puede cortar esta descarga.
     assert _fetcher(local_server).fetch(f"{local_server}/trickle.jpg") is None
 
 

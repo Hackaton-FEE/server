@@ -178,7 +178,6 @@ def test_differentiated_proxies_fallback_and_effective_values(monkeypatch):
     res = "http://res-user:res-pass@residential.example:7000"
     norm = "http://norm-user:norm-pass@datacenter.example:8080"
 
-    # Caso 1: Solo legacy
     monkeypatch.setenv("FEE_OSINT_PROXY_URL", legacy)
     monkeypatch.delenv("FEE_OSINT_RESIDENTIAL_PROXY_URL", raising=False)
     monkeypatch.delenv("FEE_OSINT_NORMAL_PROXY_URL", raising=False)
@@ -186,7 +185,7 @@ def test_differentiated_proxies_fallback_and_effective_values(monkeypatch):
     assert s1.effective_osint_residential_proxy == legacy
     assert s1.effective_osint_normal_proxy == ""
 
-    # Caso 2: Residencial explícito tiene prioridad sobre legacy
+    # El proxy residencial explícito tiene prioridad sobre el legado.
     monkeypatch.setenv("FEE_OSINT_RESIDENTIAL_PROXY_URL", res)
     monkeypatch.setenv("FEE_OSINT_NORMAL_PROXY_URL", norm)
     s2 = Settings()

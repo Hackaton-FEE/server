@@ -1,17 +1,10 @@
-"""Capa de correlación: cruza los `Finding[]` ya deduplicados para producir
-señales densas para el dashboard, sin red ni dependencias nuevas.
+"""Correlación de hallazgos deduplicados para el dashboard. Funciones puras.
 
-Tres señales (ver `docs/osint-architecture.md` §9.5):
-
-- **Grafo de identidad**: cuentas ligadas a la misma persona por evidencia
-  compartida (nombre real, ubicación, empresa, alias) y sus clústeres.
-- **Timeline de antigüedad**: línea temporal a partir de `creation_date`.
-- **Contactos reconstruidos**: agrupa los `masked_email` / `masked_phone` que
-  varios sitios exponen y los contrasta con el correo aportado por el usuario.
-
-Funciones puras y deterministas: cada paso devuelve estructuras nuevas y nunca
-muta las anteriores (regla de inmutabilidad del proyecto). Este módulo no
-registra nada; solo transforma.
+- Grafo de identidad: cuentas ligadas por evidencia compartida (nombre real,
+  ubicación, empresa, alias) y sus clústeres.
+- Timeline: antigüedad de las cuentas según `creation_date`.
+- Contactos reconstruidos: `masked_email`/`masked_phone` agrupados y
+  contrastados con el correo aportado.
 """
 
 from collections.abc import Sequence
@@ -25,13 +18,8 @@ from fee_server.util.time import as_utc, utcnow
 # pertenecen a la misma persona. `username` se compara aparte (campo propio).
 _LINKING_KEYS: tuple[str, ...] = ("full_name", "location", "company")
 _DAYS_PER_YEAR = 365.25
-# Una cuenta creada hace más de estos años es riesgo latente: superficie antigua
-# que el usuario probablemente ya no vigila. (Sin señal de última actividad
-# todavía; ver docs/osint-architecture.md §9.5.)
+# Antigüedad a partir de la cual una cuenta se considera superficie olvidada.
 _DORMANT_YEARS = 5
-
-
-# --- Estructuras de salida ------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,9 +135,6 @@ class CorrelationResult:
         }
 
 
-# --- Grafo de identidad -------------------------------------------------
-
-
 def node_id(finding: Finding) -> str:
     return f"{finding.platform}:{finding.username or ''}"
 
@@ -177,11 +162,7 @@ def _linked_usernames(finding: Finding) -> frozenset[str]:
 
 
 def _references(left: Finding, right: Finding) -> bool:
-    """¿Alguno menciona explícitamente el username del otro (`ids_usernames`)?
-
-    A diferencia de `_shared_keys` (atributos simétricos coincidentes), esto es
-    una referencia dirigida: A puede enlazar a B sin que B enlace a A.
-    """
+    """¿Alguno enlaza explícitamente al otro vía `linked_usernames`? Relación dirigida."""
     left_username = (left.username or "").strip().casefold()
     right_username = (right.username or "").strip().casefold()
     if not left_username or not right_username:
@@ -244,9 +225,6 @@ def build_identity_graph(findings: Sequence[Finding]) -> IdentityGraph:
     return IdentityGraph(nodes=nodes, edges=tuple(edges), clusters=clusters)
 
 
-# --- Timeline ---------------------------------------------------------
-
-
 def _parse_date(raw: object) -> datetime | None:
     if not isinstance(raw, str) or not raw.strip():
         return None
@@ -291,15 +269,11 @@ def build_timeline(findings: Sequence[Finding], *, now: datetime | None = None) 
     )
 
 
-# --- Contactos reconstruidos -----------------------------------------
-
-
 def _email_matches_mask(email: str, mask: str) -> bool:
-    """¿El correo aportado es compatible con una máscara tipo `j***@e***.com`?
+    """¿El correo es compatible con una máscara tipo `j***@e***.com`?
 
-    Las máscaras reales (holehe et al.) no conservan la longitud, así que se
-    comparan solo los anclajes visibles: el prefijo antes del primer `*` y el
-    sufijo tras el último `*` de cada parte (local y dominio).
+    Las máscaras no conservan la longitud: solo se comparan el prefijo y el
+    sufijo visibles de cada parte (local y dominio).
     """
     if email.count("@") != 1 or "@" not in mask:
         return False
@@ -345,9 +319,6 @@ def reconstruct_contacts(
             )
         )
     return tuple(contacts)
-
-
-# --- Orquestación ----------------------------------------------------
 
 
 def correlate(

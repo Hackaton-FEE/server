@@ -6,8 +6,7 @@ from urllib.parse import urlsplit
 from pydantic import Field, SecretStr, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Valor obvio e inseguro: sirve para desarrollo local sin configurar nada.
-# Un validador impide arrancar con este valor en producción.
+# Solo para desarrollo local; un validador lo rechaza en producción.
 DEV_INSECURE_JWT_SECRET = "dev-insecure-secret-change-me-000000000000"
 
 MIN_JWT_SECRET_LENGTH = 32
@@ -45,15 +44,12 @@ class Settings(BaseSettings):
     # --- Transporte ---
     cors_origins: tuple[str, ...] = ()
     max_request_body_bytes: int = 16_384
-    # Debe coincidir con `FEE_RATE_LIMIT_ENABLED` (mismo nombre de variable),
-    # que además construye el `Limiter` de verdad en `core/rate_limit.py`. Este
-    # campo solo existe para que un arranque en producción sin límites por IP
-    # falle rápido en vez de exponer todos los endpoints sin cuota.
+    # Refleja la variable que usa `core/rate_limit.py` para que producción no
+    # arranque sin límite por IP.
     rate_limit_enabled: bool = False
 
     # --- Motor OSINT (huella digital) ---
-    # `fake`: motores simulados con salidas deterministas; no tocan la red.
-    # `real`: subprocesos a las herramientas vendorizadas (fase posterior).
+    # `fake`: salidas deterministas sin red; `real`: herramientas vendorizadas.
     osint_engine_mode: Literal["fake", "real"] = "fake"
     osint_retention_days: int = 7
     osint_max_concurrent_scans: int = Field(default=2, ge=1)
@@ -62,23 +58,17 @@ class Settings(BaseSettings):
     osint_proxy_url: SecretStr = SecretStr("")
     osint_residential_proxy_url: SecretStr = SecretStr("")
     osint_normal_proxy_url: SecretStr = SecretStr("")
-    # Raíz de las herramientas vendorizadas, cada una con su `.venv`.
-    # La prepara `vendor/osint/setup.sh`.
+    # Preparado por `vendor/osint/setup.sh`; cada herramienta con su `.venv`.
     osint_vendor_dir: str = "vendor/osint"
-    # Tope de alias nuevos por escaneo en la segunda pasada de pivoteo (§8).
-    # Profundidad fija en 1: los hallazgos de esa segunda pasada nunca vuelven
-    # a extraer candidatos.
+    # Tope de alias por escaneo en la pasada de pivoteo (profundidad fija en 1).
     osint_max_pivot_candidates: int = Field(default=3, ge=0, le=10)
-    # Forense EXIF sobre avatar_url (§D2.6). Apagarlo hace que el enriquecimiento
-    # se salte por completo, como si ningún hallazgo trajera avatar_url.
+    # Forense EXIF de `avatar_url`; desactivarlo omite el enriquecimiento.
     osint_image_metadata_enabled: bool = True
     osint_image_max_bytes: int = Field(default=8_000_000, ge=1)
     osint_image_fetch_timeout_seconds: int = Field(default=15, ge=1)
 
     # --- Verificación de correo (consentimiento para escanear a terceros) ---
-    # Código estático para el hackathon: mientras no esté vacío, `confirm` acepta
-    # exactamente este valor. Vaciarlo (y añadir envío real) es el interruptor a
-    # modo funcional. Ver `domain/verification/`.
+    # Código provisional que `confirm` acepta tal cual; vacío, ninguno es válido.
     verification_static_code: str = "1234"
     verification_code_ttl_seconds: int = 600
     osint_consent_ttl_seconds: int = 3600

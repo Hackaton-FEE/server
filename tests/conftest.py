@@ -6,6 +6,7 @@ from fee_server.core.rate_limit import limiter
 from fee_server.db.base import Base
 from fee_server.db.session import get_engine
 from fee_server.main import create_app
+from tests import passkey_helpers as pk
 from tests.passkey_helpers import TEST_ORIGIN
 
 TEST_JWT_SECRET = "test-secret-test-secret-test-secret-0123"
@@ -41,3 +42,10 @@ def client(settings) -> TestClient:
     with TestClient(app) as test_client:
         yield test_client
     Base.metadata.drop_all(get_engine())
+
+
+@pytest.fixture
+def headers(client) -> dict[str, str]:
+    """Cabecera `Authorization` de una cuenta recién registrada por passkey."""
+    session = pk.register(client, pk.new_device()).json()
+    return {"Authorization": f"Bearer {session['access_token']}"}

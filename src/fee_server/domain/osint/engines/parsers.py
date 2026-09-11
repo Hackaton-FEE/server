@@ -61,9 +61,6 @@ def _empty(value: object) -> bool:
     return value in (None, "", [], {})
 
 
-# --- Blackbird -------------------------------------------------------------
-
-
 def _blackbird_details(metadata: object) -> dict[str, object]:
     if not isinstance(metadata, list):
         return {}
@@ -112,9 +109,6 @@ def parse_blackbird_json(text: str, *, username: str | None) -> list[Finding]:
     return findings
 
 
-# --- Maigret --------------------------------------------------------------
-
-
 def _maigret_details(ids: Mapping[str, object]) -> dict[str, object]:
     details: dict[str, object] = {}
     for source_key, dest_key in _MAIGRET_ID_MAP.items():
@@ -133,12 +127,9 @@ def _maigret_details(ids: Mapping[str, object]) -> dict[str, object]:
 
 
 def _maigret_links(entry: Mapping[str, object]) -> dict[str, object]:
-    """Munición de pivoteo que Maigret ya calcula (`ids_links`/`ids_usernames`).
+    """Enlaces y alias relacionados que Maigret extrae (`ids_links`/`ids_usernames`).
 
-    `bio_links` es público (son enlaces que el propio perfil expone); las
-    cuentas relacionadas (`linked_usernames`) son solo internas — alimentan el
-    grafo de identidad, nunca se persisten tal cual (`findings.py:
-    PUBLIC_DETAIL_KEYS`).
+    `bio_links` es público; `linked_usernames` es interno (ver `PUBLIC_DETAIL_KEYS`).
     """
     details: dict[str, object] = {}
     links = entry.get("ids_links")
@@ -147,9 +138,8 @@ def _maigret_links(entry: Mapping[str, object]) -> dict[str, object]:
         if urls:
             details["bio_links"] = urls
 
-    # Maigret 0.6.5 devuelve {identificador: tipo}, NO {sitio: alias}.
-    # Los valores "username", "gaia_id", etc. describen el tipo de consulta.
-    # Solo las claves de tipo username pueden alimentar los motores de alias.
+    # Maigret 0.6.5 devuelve {identificador: tipo}, no {sitio: alias}; solo los
+    # identificadores de tipo `username` sirven para pivotear.
     usernames_map = entry.get("ids_usernames")
     if isinstance(usernames_map, dict):
         usernames = sorted(
@@ -213,9 +203,8 @@ def parse_maigret_simple_json(text: str, *, username: str | None = None) -> list
                 platform=_MAIGRET_SOURCE_SUFFIX.sub("", str(status.get("site_name") or "")).strip(),
                 category=_first_tag(status.get("tags"), site.get("tags")),
                 url=status.get("url") or entry.get("url_user"),
-                # ids.username describe la cuenta extraída en esta página.
-                # status/entry.username suelen repetir el alias consultado.
-                # Nunca tomar un alias de ids_usernames: puede ser de otra página.
+                # `ids.username` describe la cuenta de esta página; `ids_usernames`
+                # puede referirse a otras, así que nunca se usa aquí.
                 username=_site_username(
                     ids.get("username"), status.get("username"), entry.get("username")
                 )
@@ -227,9 +216,6 @@ def parse_maigret_simple_json(text: str, *, username: str | None = None) -> list
             )
         )
     return findings
-
-
-# --- Holehe --------------------------------------------------------------
 
 
 def _holehe_details(row: Mapping[str, str]) -> dict[str, object]:
@@ -246,9 +232,6 @@ def _holehe_details(row: Mapping[str, str]) -> dict[str, object]:
 def _holehe_url(row: Mapping[str, str]) -> str | None:
     domain = (row.get("domain") or "").strip()
     return f"https://{domain}" if domain else None
-
-
-# --- Ignorant ----------------------------------------------------------
 
 
 def _ignorant_platform(domain: str) -> str:

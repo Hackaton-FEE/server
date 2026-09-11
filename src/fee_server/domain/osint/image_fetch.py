@@ -1,21 +1,8 @@
-"""Descarga acotada de `avatar_url`, con la misma disciplina de límites y
-proxy que `engines/process.py` aplica a los subprocesos, adaptada a HTTP.
+"""Descarga acotada de `avatar_url`, solo en memoria.
 
-Nunca escribe a disco: los bytes viven en memoria el tiempo mínimo para
-pasarlos a `image_metadata.py`. `fake`/`real` conmutan igual que
-`engines.build_engines` — en modo fake no hay red, en modo real hay SSRF
-guard + tope de bytes en streaming + tope de reloj de pared + proxy.
-
-Defensa SSRF con *pinning*: `avatar_url` viene de datos raspados de un
-tercero (un perfil malicioso podría poner ahí lo que sea), así que no basta
-con resolver el host y comprobar la IP — si se conectara por hostname,
-`httpx` volvería a resolver el DNS por su cuenta y un atacante que controle
-el DNS autoritativo del dominio (DNS-rebinding, TTL≈0) podría servir una IP
-pública en la validación y una interna en la conexión real, milisegundos
-después. Por eso `_pinned_target` resuelve una sola vez, valida esa IP, y la
-petición se hace literalmente contra esa IP (`Host`/SNI puestos aparte al
-hostname original vía la extensión `sni_hostname` de httpx) — no hay una
-segunda resolución que un atacante pueda influir.
+En modo real aplica guard SSRF, tope de bytes, tope de reloj de pared y proxy.
+El host se resuelve una sola vez y la petición va contra esa IP validada, con
+`Host`/SNI del hostname original, para evitar DNS rebinding.
 """
 
 import io
@@ -35,8 +22,7 @@ logger = logging.getLogger("fee_server.osint")
 
 _ALLOWED_SCHEMES = frozenset({"http", "https"})
 _DEFAULT_PORT = {"http": 80, "https": 443}
-# Imagen mínima válida (1x1 JPEG) con EXIF fijo, generada una sola vez.
-_FAKE_GPS_IFD = 34853
+_FAKE_GPS_IFD = 34853  # GPSInfo
 
 
 class ImageFetcher(Protocol):
@@ -57,12 +43,7 @@ def _is_disallowed_ip(ip: str) -> bool:
 
 
 def _resolve_pinned_ip(host: str, port: int) -> str | None:
-    """Una sola resolución: la IP a la que se conectará de verdad, o `None`.
-
-    Rechaza el host si CUALQUIER IP resuelta es insegura (no solo la
-    primera) — un dominio con varios registros A/AAAA, uno público y uno
-    interno, no debe colar por azar de qué IP se elija.
-    """
+    """IP a la que se conectará, o `None` si cualquiera de las resueltas es insegura."""
     try:
         results = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
     except OSError:
@@ -129,11 +110,7 @@ class RealImageFetcher:
         proxy = self._settings.effective_osint_normal_proxy or None
         timeout = self._settings.osint_image_fetch_timeout_seconds
         max_bytes = self._settings.osint_image_max_bytes
-        # El timeout de httpx es por-operación (connect/read/write), no del
-        # total de la descarga: un servidor que gotea bytes justo por debajo
-        # de ese límite en cada lectura podría alargar la descarga sin fin.
-        # Se comprueba entre bloques; DNS ocurre antes y una lectura puede
-        # sumar otro timeout. No es un límite estricto del escaneo completo.
+        # El timeout de httpx es por operación; este tope acota la descarga completa.
         deadline = time.monotonic() + timeout
 
         try:

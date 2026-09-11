@@ -1,11 +1,4 @@
-"""Extracción de metadatos EXIF de una imagen ya descargada en memoria.
-
-Función pura: no hace red ni escribe a disco, recibe bytes y devuelve
-`details` listos para fusionarse en un `Finding` (ver `findings.py:DETAIL_KEYS`).
-Deliberadamente solo extrae tres señales de alto valor de privacidad — GPS,
-cámara, fecha de captura — no un volcado completo del EXIF (que puede traer
-decenas de tags irrelevantes o incluso basura binaria).
-"""
+"""Extracción pura de metadatos EXIF: GPS, cámara y fecha de captura."""
 
 import io
 import logging
@@ -17,8 +10,7 @@ from PIL import ExifTags, Image, UnidentifiedImageError
 logger = logging.getLogger("fee_server.osint")
 
 _GPS_IFD = ExifTags.IFD.GPSInfo
-# Make/Model son texto libre dentro del EXIF de un archivo de un tercero no
-# confiable — acotar su longitud evita que un tag manipulado infle `details`.
+# Make/Model son texto libre de un archivo no confiable: se acota su longitud.
 _MAX_CAMERA_MODEL_LENGTH = 200
 
 
@@ -74,7 +66,7 @@ def extract_image_metadata(image_bytes: bytes) -> dict[str, object]:
         with Image.open(io.BytesIO(image_bytes)) as image:
             exif = image.getexif()
             return _extract_exif(exif)
-    except (  # Malformed image/IFD values must not discard other findings.
+    except (  # Un EXIF malformado no debe afectar al resto del hallazgo.
         UnidentifiedImageError,
         OSError,
         ValueError,

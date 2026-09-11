@@ -1,15 +1,7 @@
 """Casos de uso de la verificación de correo.
 
-Hackathon: el código es estático (`FEE_VERIFICATION_STATIC_CODE`, por defecto
-`"1234"`) y no se envía ningún correo. Todo lo demás — validación del correo,
-tokens firmados, `consent_token` — es el comportamiento definitivo.
-
-Para hacerlo funcional (ver `docs/osint-architecture.md`):
-  1. `request_email`: generar un código aleatorio, guardar `sha256(code)` en el
-     payload del `verification_token` y enviarlo por correo (`EmailSender`).
-  2. `confirm_email`: comparar `sha256(code)` con el hash del token en vez del
-     código estático.
-  3. Vaciar `FEE_VERIFICATION_STATIC_CODE`.
+El código es estático (`FEE_VERIFICATION_STATIC_CODE`) y aún no se envía correo;
+el resto del flujo (tokens firmados y `consent_token`) es definitivo.
 """
 
 import hmac
@@ -47,7 +39,7 @@ class VerificationService:
             ttl,
             {"email_sha256": email_digest(email), "requester_id": requester_id},
         )
-        # TODO(funcional): generar código aleatorio y EmailSender.send_code(email, code).
+        # TODO: generar un código aleatorio, guardar su hash en el token y enviarlo.
         return EmailVerificationRequested(verification_token=token, expires_in=ttl)
 
     def confirm_email(
@@ -77,6 +69,5 @@ class VerificationService:
 
     def _code_is_valid(self, code: str) -> bool:
         expected = self._settings.verification_static_code
-        # Un código estático vacío significa que el modo real aún no está
-        # implementado: en ese caso ningún código es válido.
+        # Sin código configurado, ninguno es válido (falla cerrado).
         return bool(expected) and hmac.compare_digest(code, expected)

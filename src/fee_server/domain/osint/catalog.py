@@ -1,8 +1,4 @@
-"""Normalización de nombres de plataforma y categorías, y validación de entrada.
-
-En la fase inicial es una tabla pequeña. Al conectar los motores reales crecerá
-o se sustituirá por el catálogo de WhatsMyName.
-"""
+"""Validación de identificadores y normalización de plataformas y categorías."""
 
 import re
 from typing import Final
@@ -15,8 +11,7 @@ from fee_server.domain.osint.findings import CATEGORIES
 _USERNAME_RE: Final = re.compile(r"^[A-Za-z0-9._-]{2,64}$")
 # email: validación pragmática, no un parser RFC 5322 completo.
 _EMAIL_RE: Final = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}\.[A-Za-z]{2,}$")
-# name: nombre completo. Empieza por letra (Unicode, admite acentos) y admite
-# además espacios, punto, apóstrofo y guion. 2 a 80 caracteres.
+# name: empieza por letra (Unicode); admite espacios, punto, apóstrofo y guion. 2 a 80.
 _NAME_RE: Final = re.compile(r"^[^\W\d_](?:[^\W\d_]|[ .'\-]){1,79}$", re.UNICODE)
 # phone: E.164 (`+` seguido de 8 a 15 dígitos, el primero no cero).
 _PHONE_RE: Final = re.compile(r"^\+[1-9]\d{7,14}$")
@@ -84,9 +79,7 @@ def is_valid_identifier(target_type: str, identifier: str) -> bool:
 def split_phone(e164: str) -> tuple[str, str]:
     """Divide un número E.164 en (código de país, número nacional).
 
-    Se apoya en `phonenumbers` (port de libphonenumber de Google): el prefijo de
-    país tiene entre 1 y 3 dígitos sin regla algorítmica, así que un split casero
-    sería frágil. Lanza `ValueError` si el número no es interpretable.
+    Lanza `ValueError` si el número no es válido.
     """
     try:
         parsed = phonenumbers.parse(e164, None)

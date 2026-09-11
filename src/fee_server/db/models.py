@@ -1,10 +1,7 @@
-"""Modelos ORM de autenticación.
+"""Modelos ORM con tipos portables entre SQLite (pruebas) y PostgreSQL.
 
-Se usan tipos portables (`String`, `LargeBinary`, `Integer`, `DateTime`) para que
-el mismo esquema funcione en SQLite (pruebas) y PostgreSQL (despliegue).
-
-Privacidad: el servidor NO guarda correo, teléfono ni contraseña. Un usuario es
-un identificador aleatorio (`handle`) más una o varias llaves públicas.
+El servidor no guarda correo, teléfono ni contraseña: un usuario es un `handle`
+aleatorio más una o varias llaves públicas.
 """
 
 import uuid
@@ -78,8 +75,7 @@ class OsintScan(Base):
     # Por motor: {"status": "...", "started_at": "...", "finished_at": "...",
     #             "error_category": "..."}.
     engines: Mapped[dict] = mapped_column(JSON, default=dict)
-    # Capa de correlación (grafo de identidad, timeline, contactos reconstruidos);
-    # se calcula al completar el escaneo. Ver `domain/osint/correlation.py`.
+    # Grafo de identidad, timeline y contactos; se calcula al completar el escaneo.
     correlation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

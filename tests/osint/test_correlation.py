@@ -26,9 +26,6 @@ def _finding(platform: str, username: str | None = "alias", **details) -> Findin
     )
 
 
-# --- Grafo de identidad ------------------------------------------------
-
-
 def test_shared_full_name_links_two_accounts():
     findings = [
         _finding("GitHub", username="gh", full_name="Ada Lovelace"),
@@ -91,9 +88,6 @@ def test_potential_matches_are_excluded_from_the_graph():
     assert [node.platform for node in graph.nodes] == ["GitHub"]
 
 
-# --- Timeline --------------------------------------------------------
-
-
 def test_timeline_orders_entries_and_computes_span():
     findings = [
         _finding("GitHub", creation_date="2011-09-03T15:26:22Z"),
@@ -123,9 +117,6 @@ def test_timeline_ignores_unparseable_dates():
 
 def test_timeline_is_empty_without_dates():
     assert build_timeline([_finding("GitHub")], now=_NOW) == build_timeline([], now=_NOW)
-
-
-# --- Contactos reconstruidos ---------------------------------------
 
 
 def test_masked_emails_from_two_sites_form_one_group():
@@ -220,9 +211,6 @@ def test_malformed_provided_email_is_treated_as_inconsistent():
     contacts = reconstruct_contacts(findings, provided_email="not-an-email")
 
     assert contacts[0].consistent_with_provided is False
-
-
-# --- Orquestación ---------------------------------------------------
 
 
 def test_correlate_on_empty_findings_returns_empty_result():

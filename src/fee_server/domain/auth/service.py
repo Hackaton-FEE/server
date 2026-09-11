@@ -47,7 +47,6 @@ class AuthService:
         self._session = session
         self._settings = settings
 
-    # ------------------------------------------------------------------ registro
     def start_registration(self, label: str) -> ChallengeOptionsResponse:
         handle = secrets.token_bytes(HANDLE_BYTES)
         clean_label = _clean_label(label)
@@ -82,7 +81,6 @@ class AuthService:
         )
         return self._issue_session(user)
 
-    # --------------------------------------------------------------------- login
     def start_authentication(self) -> ChallengeOptionsResponse:
         challenge, token = challenge_mod.issue_challenge(
             self._settings.jwt_secret,
@@ -116,15 +114,13 @@ class AuthService:
         stored.user.last_active_at = utcnow()
         return self._issue_session(stored.user)
 
-    # ------------------------------------------------------------------- sesión
     def refresh(self, refresh_token: str) -> SessionResponse:
         row = repository.get_refresh_token(self._session, tokens.hash_refresh_token(refresh_token))
         if row is None:
             raise InvalidSessionError()
         if row.revoked_at is not None:
-            # Reuso de un token ya rotado: posible robo -> se cierra todo.
-            # Se confirma de inmediato porque después lanzamos un error (que en
-            # otro caso haría rollback de esta revocación).
+            # Reuso de un token rotado: posible robo, se revocan todos. Commit
+            # inmediato porque el error posterior haría rollback.
             repository.revoke_all_refresh_tokens(self._session, row.user_id)
             self._session.commit()
             raise InvalidSessionError()
@@ -150,7 +146,6 @@ class AuthService:
             credentials_count=repository.count_credentials(self._session, user.id),
         )
 
-    # ------------------------------------------------------------------ helpers
     def _read_challenge(self, token: str, purpose: str) -> tuple[bytes, dict]:
         try:
             return challenge_mod.read_challenge(self._settings.jwt_secret, token, purpose)

@@ -33,8 +33,7 @@ from fee_server.domain.osint.engines.parsers import (
 from fee_server.domain.osint.engines.process import ToolExecutionError, ToolRun, run_tool
 from fee_server.domain.osint.findings import RATE_LIMITED, Finding
 
-# `osint_engine_timeout_seconds` es el presupuesto de reloj de pared por motor.
-# El timeout por petición HTTP es un valor pequeño y fijo.
+# Timeout por petición HTTP; el total por motor lo fija `osint_engine_timeout_seconds`.
 _PER_REQUEST_TIMEOUT = "15"
 # Maigret parsea páginas completas (socid-extractor): necesita más margen.
 _MAIGRET_BUDGET_FACTOR = 3
@@ -102,9 +101,8 @@ class _RealEngine:
 
     def _account_recovery_command(self) -> list[str]:
         python = self._require(self._vendor / self.name / ".venv" / "bin" / "python")
-        # Las versiones están fijadas en setup.sh. Estos CLI consultan PyPI
-        # antes de argparse y pueden incluso autoactualizarse usando el proxy.
-        # Deshabilitar únicamente esa comprobación mantiene intactos los módulos.
+        # Versiones fijadas en setup.sh: se anula la consulta a PyPI previa a
+        # argparse, que podría autoactualizar la herramienta a través del proxy.
         return [
             str(python),
             "-c",

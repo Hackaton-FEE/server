@@ -48,8 +48,6 @@ class ScanService:
         self._session = session
         self._settings = settings
 
-    # --- creación ---------------------------------------------------------
-
     def create_scan(self, request: ScanRequest, user: User) -> tuple[OsintScan, EngineRequest]:
         self._validate(request, user.id)
 
@@ -65,8 +63,7 @@ class ScanService:
             expires_at=utcnow() + timedelta(days=self._settings.osint_retention_days),
         )
         repository.add_scan(self._session, scan)
-        # Commit explícito: la tarea de fondo abre su propia sesión y necesita
-        # ver el escaneo ya persistido.
+        # La tarea de fondo abre su propia sesión y necesita ver el escaneo.
         self._session.commit()
         return scan, self._engine_request(request)
 
@@ -106,12 +103,9 @@ class ScanService:
             email = request.identifier
         elif request.target_type == "phone":
             phone = request.identifier
-        # `name` todavía no alimenta ningún motor; se persiste el hash del escaneo.
-        # Sin duplicados, preservando el orden.
+        # `name` aún no alimenta ningún motor; solo se persiste su hash.
         ordered = tuple(dict.fromkeys(usernames))
         return EngineRequest(usernames=ordered, email=email, phone=phone)
-
-    # --- consulta --------------------------------------------------------
 
     def owned_scan(self, scan_id: str, user: User) -> OsintScan:
         scan = repository.get_owned_scan(self._session, scan_id, user.id)
@@ -144,7 +138,7 @@ class ScanService:
 
     @staticmethod
     def _engine_states(scan: OsintScan) -> dict[str, dict]:
-        # Older failed scans store a top-level error_category string here.
+        # Omite `error_category`, que un escaneo fallido guarda en este mismo campo.
         return {
             name: state
             for name, state in (scan.engines or {}).items()
@@ -209,8 +203,6 @@ class ScanService:
                 "partial": dashboard.partial or coverage in {"none", "partial"},
             }
         )
-
-    # --- borrado y limpieza --------------------------------------------
 
     def delete_scan(self, scan_id: str, user: User) -> None:
         scan = repository.get_owned_scan(self._session, scan_id, user.id)

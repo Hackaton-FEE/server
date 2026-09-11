@@ -19,9 +19,6 @@ def _fixture(name: str) -> str:
     return (FIXTURES / name).read_text("utf-8")
 
 
-# --- Blackbird ----------------------------------------------------------
-
-
 def test_blackbird_keeps_only_found_entries():
     findings = parse_blackbird_json(
         _fixture("blackbird_testuser12345.json"), username="testuser12345"
@@ -60,9 +57,6 @@ def test_blackbird_metadata_raises_confidence():
     assert by_platform["Duolingo"].confidence == 90
     assert by_platform["Duolingo"].details["avatar_url"] == "https://img/x.png"
     assert by_platform["Reddit"].confidence == 80
-
-
-# --- Maigret -----------------------------------------------------------
 
 
 def test_maigret_simple_report_yields_confirmed_findings_with_ids():
@@ -135,9 +129,6 @@ def test_maigret_similar_match_is_a_potential_match():
     assert finding.confidence == 50
 
 
-# --- Holehe ----------------------------------------------------------
-
-
 def test_holehe_rate_limited_rows_become_rate_limited_findings():
     findings = parse_holehe_csv(_fixture("holehe_contact_github.csv"))
 
@@ -158,8 +149,6 @@ def test_holehe_confirmed_rows_extract_masked_contacts():
     assert findings["spotify"].status == RATE_LIMITED
     assert findings["spotify"].url is None
 
-
-# --- Ignorant --------------------------------------------------------
 
 _IGNORANT_STDOUT = """\
 Twitter : @palenath

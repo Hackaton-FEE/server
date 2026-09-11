@@ -1,11 +1,7 @@
 """Extracción de candidatos de pivoteo a partir de `linked_usernames`.
 
-Función pura, sin red: decide qué alias nuevos merece la pena consultar en una
-segunda pasada, a partir de lo que los motores ya descubrieron en la primera.
-Los candidatos vienen de datos raspados de un sitio de terceros (la bio de un
-perfil) — una frontera de confianza distinta a la del propio usuario — así que
-se validan con el mismo patrón estricto que un identificador enviado por API
-antes de que lleguen a tocar un subproceso.
+Los candidatos provienen de datos raspados de terceros, así que se validan con
+el mismo patrón que un identificador recibido por la API.
 """
 
 from collections.abc import Sequence
@@ -21,13 +17,11 @@ def extract_pivot_candidates(
 ) -> tuple[str, ...]:
     """Alias nuevos a consultar, deduplicados, validados y acotados.
 
-    Solo mira hallazgos `CONFIRMED` (un `POTENTIAL_MATCH`/`RATE_LIMITED` no es
-    evidencia suficiente para gastar otro escaneo). Orden alfabético
-    determinista antes de recortar al tope.
+    Solo considera hallazgos `CONFIRMED`; el orden alfabético hace el recorte
+    determinista.
     """
     excluded = {alias.strip().casefold() for alias in already_queried if alias.strip()}
-    # No pivotear hacia un alias que la Fase 1 ya confirmó por su cuenta —
-    # sería repetir trabajo sobre una cuenta que el escaneo ya resolvió.
+    # Tampoco se pivotea hacia alias que la Fase 1 ya confirmó.
     excluded |= {
         finding.username.strip().casefold()
         for finding in findings
@@ -42,12 +36,10 @@ def extract_pivot_candidates(
         if not isinstance(linked, list):
             continue
         for raw in linked:
-            # This is scraped metadata, not a client-supplied alias. Some
-            # extractors expose the literal template token as a linked handle.
-            # Never expand that token into a new, unrelated identity search.
             if not isinstance(raw, str):
                 continue
             candidate = raw.strip()
+            # Algunos extractores exponen el token de plantilla como alias.
             if candidate.casefold() == "username":
                 continue
             key = candidate.casefold()

@@ -1,17 +1,10 @@
-"""Orquestación de la cascada de motores para un escaneo, con pivoteo.
+"""Orquestación secuencial de los motores de un escaneo, con pivoteo.
 
-Ejecución secuencial de los motores desde una tarea de fondo de FastAPI. El
-contrato HTTP (202 + polling) es el mismo que tendría un worker externo; ver
-ADR-OSINT-01 en `docs/osint-architecture.md`. Los motores son simulados o reales
-según `FEE_OSINT_ENGINE_MODE`; un motor que falla no aborta el escaneo.
-
-Dos fases, sin recursión encadenada (§8): la Fase 1 corre los 4 motores sobre
-el identificador original; si alguno descubrió alias relacionados
-(`linked_usernames`), una Fase 2 acotada vuelve a correr los motores basados
-en username sobre esos candidatos. Los hallazgos de la Fase 2 nunca se
-inspeccionan para sacar más candidatos — no hay un tercer bucle que alguien
-pueda añadir por accidente; la profundidad 1 está en la forma del código, no
-en un contador que se pueda subir sin querer.
+Se ejecuta como tarea de fondo; un motor que falla no aborta el escaneo. La
+Fase 1 corre todos los motores sobre el identificador original; si aparecen
+alias relacionados (`linked_usernames`), la Fase 2 repite los motores de
+username sobre esos candidatos. Los hallazgos de la Fase 2 no generan nuevos
+candidatos (profundidad 1).
 """
 
 import logging
@@ -106,17 +99,10 @@ def _run_scan(*, scan_id: str, engine_request: EngineRequest, settings: Settings
 
     try:
         merged = merge_findings(all_findings)
-        # Forense EXIF sobre avatar_url (§D2.6): antes del grafo/ruido a propósito,
-        # así un GPS/cámara real puede salvar a un hallazgo de la degradación por
-        # alias común, igual que full_name/location hoy (ver noise.py).
+        # El EXIF va antes del filtro de ruido: un GPS o cámara real evita degradar.
         merged = enrich_with_image_metadata(merged, settings)
-        # Dos grafos con propósitos distintos, no un cálculo duplicado: este se
-        # construye sobre el conjunto crudo (antes de degradar) para que un
-        # hallazgo de ruido pueda salvarse si otra cuenta lo corrobora;
-        # `correlate()` abajo recalcula el grafo sobre el conjunto ya limpio,
-        # que es el que se persiste. No reusar este primer grafo para la
-        # correlación final: seguiría incluyendo nodos que la degradación
-        # dejó fuera de `CONFIRMED` (y por tanto fuera de `build_identity_graph`).
+        # Grafo previo a la degradación para que la corroboración salve hallazgos;
+        # `correlate()` lo recalcula sobre el conjunto final que se persiste.
         graph = build_identity_graph(merged)
         merged = demote_unlinked_common_usernames(merged, graph)
         score = exposure_score(merged)
@@ -167,11 +153,9 @@ def _record_engine_result(
     *,
     error_category: str | None = None,
 ) -> None:
-    """Registra el resultado de un motor; si ya corrió antes (pivoteo), agrega.
+    """Registra el resultado de un motor y lo agrega si ya corrió (pivoteo).
 
-    `scan.engines` conserva siempre las 4 claves canónicas — nunca se inventan
-    pseudo-motores tipo `"blackbird_pivot"` — así el contrato de
-    `ScanStatusResponse` no cambia de forma entre fases.
+    Solo usa claves canónicas de motor para no alterar `ScanStatusResponse`.
     """
     previous = engine_state.get(name)
     if previous:
@@ -194,12 +178,7 @@ def _record_engine_result(
 
 
 def _mark_engine_running(engine_state: dict[str, dict], name: str) -> None:
-    """Quita `finished_at` antes de relanzar un motor (Fase 2 de pivoteo).
-
-    Sin esto, `service.py::build_status` seguiría listando el motor como
-    completado (por su entrada de la Fase 1) mientras en realidad está
-    corriendo otra vez.
-    """
+    """Quita `finished_at` al relanzar un motor para que no figure como completado."""
     previous = engine_state.get(name)
     if previous is None:
         return

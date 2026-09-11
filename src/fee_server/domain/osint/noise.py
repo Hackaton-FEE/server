@@ -1,18 +1,11 @@
 """Reducción de ruido: degrada `CONFIRMED` a `POTENTIAL_MATCH` cuando la única
-evidencia es "un alias común existe en un sitio".
+evidencia es que un alias común existe en un sitio.
 
-"La cuenta existe" no prueba "es tuya" cuando el alias es genérico — sitios
-distintos pueden tener personas distintas con el mismo nombre de usuario. Un
-hallazgo se degrada solo si fallan **las tres** condiciones a la vez (regla
-conservadora, evita degradar de más):
+Un hallazgo se degrada solo si se cumplen las tres condiciones:
 
-1. el alias es común (heurística, ver `is_common_username`);
-2. no trae ningún detalle que lo distinga (nombre real, ubicación, etc.);
-3. no está enlazado a ninguna otra cuenta del escaneo en el grafo de identidad.
-
-Si cualquiera de las tres falla (alias raro, o datos ricos, o corroborado por
-otra cuenta), el hallazgo se queda `CONFIRMED`. Función pura: devuelve una
-lista nueva, nunca muta las entradas.
+1. el alias es común (`is_common_username`);
+2. no trae detalles que lo distingan (nombre real, ubicación, etc.);
+3. no está enlazado a otra cuenta del escaneo en el grafo de identidad.
 """
 
 from collections.abc import Sequence
@@ -20,8 +13,7 @@ from collections.abc import Sequence
 from fee_server.domain.osint.correlation import IdentityGraph, node_id
 from fee_server.domain.osint.findings import CONFIRMED, POTENTIAL_MATCH, Finding
 
-# Heurística conservadora y deliberadamente imperfecta: el respaldo real de
-# esta regla es la corroboración (condiciones 2 y 3), no esta lista sola.
+# Heurística deliberadamente simple: el respaldo real es la corroboración.
 _COMMON_USERNAME_STOPLIST: frozenset[str] = frozenset(
     {
         "admin",
@@ -43,16 +35,8 @@ _COMMON_USERNAME_STOPLIST: frozenset[str] = frozenset(
 )
 _MIN_DISTINCTIVE_LENGTH = 8
 
-# Cualquiera de estas claves en `details` cuenta como "perfil rico": ya no es
-# un simple "FOUND" pelón, hay algo específico que lo distingue.
-#
-# `linked_usernames` queda fuera a propósito: es una afirmación del propio
-# hallazgo ("enlazo a esta otra cuenta"), no un dato autodescriptivo como
-# `full_name`/`location` — sin verificar que el username referenciado exista
-# de verdad en el escaneo, "digo que enlazo a alguien" no prueba nada. Esa
-# verificación ya la hace la condición 3 (`_strongly_linked_ids`, que exige
-# que el grafo haya formado una arista real); contarlo aquí también dejaría
-# que cualquier hallazgo se auto-declarara "rico" sin corroboración genuina.
+# Detalles que distinguen un perfil. `linked_usernames` se excluye: es una
+# afirmación del propio hallazgo y solo cuenta si el grafo la corrobora.
 _RICH_DETAIL_KEYS = (
     "full_name",
     "location",
@@ -83,12 +67,8 @@ def _has_rich_details(finding: Finding) -> bool:
     return any(key in finding.details for key in _RICH_DETAIL_KEYS)
 
 
-# Toda cuenta comparte el propio `username` como clave de enlace en el grafo
-# (`correlation.py::_linking_values`), útil para mostrar "usas el mismo alias
-# aquí y allá". Pero para la reducción de ruido esa coincidencia por sí sola
-# es circular: dos alias comunes idénticos "se corroborarían" solo por serlo,
-# justo lo que esta regla intenta filtrar. Una arista solo cuenta como
-# corroboración real si trae evidencia además del username compartido.
+# Compartir solo el `username` no corrobora: dos alias comunes idénticos se
+# validarían entre sí.
 _WEAK_LINK_ONLY_KEYS = frozenset({"username"})
 
 

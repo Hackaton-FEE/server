@@ -1,9 +1,6 @@
 """Enriquece hallazgos `CONFIRMED` con metadatos EXIF de su `avatar_url`.
 
-Orquesta `image_fetch` (red) + `image_metadata` (extracción pura) sin tocar
-disco. Un avatar que falla —de red, de formato, lo que sea— nunca debe
-perder ni degradar el resto del hallazgo ni del escaneo, mismo principio de
-tolerancia a fallos que un motor OSINT (`runner.py::_run_engine`).
+Un avatar que falla nunca degrada el hallazgo ni el escaneo.
 """
 
 import logging
