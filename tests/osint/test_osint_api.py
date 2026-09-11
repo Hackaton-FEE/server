@@ -50,6 +50,58 @@ def test_full_scan_flow_reaches_a_dashboard(client, headers):
     assert correlation["timeline"]["oldest_platform"] == "GitHub"
 
 
+class _DiscoveryEngine:
+    """Fase 1: encuentra el alias original y descubre uno relacionado."""
+
+    name = "maigret"
+
+    def run(self, request):
+        if "alias_de_prueba" not in request.usernames:
+            return EngineResult(self.name, ENGINE_OK, ())
+        finding = Finding(
+            "GitHub", "coding", None, "alias_de_prueba", CONFIRMED, 90, ("maigret",),
+            {"full_name": "Ada Lovelace", "linked_usernames": ["pivot_target_99"]},
+        )
+        return EngineResult(self.name, ENGINE_OK, (finding,))
+
+
+class _PivotAwareEngine:
+    """Solo encuentra algo cuando se le consulta el alias pivotado (Fase 2)."""
+
+    name = "blackbird"
+
+    def run(self, request):
+        if "pivot_target_99" not in request.usernames:
+            return EngineResult(self.name, ENGINE_OK, ())
+        finding = Finding(
+            "GitLab", "coding", None, "pivot_target_99", CONFIRMED, 80, ("blackbird",), {}
+        )
+        return EngineResult(self.name, ENGINE_OK, (finding,))
+
+
+def test_pivoted_findings_reach_results_without_leaking_linked_usernames(
+    client, headers, monkeypatch
+):
+    monkeypatch.setattr(
+        runner, "build_engines", lambda _s: (_DiscoveryEngine(), _PivotAwareEngine())
+    )
+
+    scan_id = _start(client, headers).json()["scan_id"]
+    dashboard = client.get(f"{SCANS}/{scan_id}/results", headers=headers).json()
+
+    items = [item for cat in dashboard["categories"] for item in cat["items"]]
+    platforms = {item["platform"] for item in items}
+    assert "GitLab" in platforms  # el hallazgo pivotado llegó al dashboard
+
+    # `linked_usernames` es interno: puede aparecer como *nombre* de evidencia
+    # en la arista del grafo (documentado, esperado), pero nunca como campo
+    # crudo dentro de ningún `details` de hallazgo.
+    assert all("linked_usernames" not in item["details"] for item in items)
+
+    edges = dashboard["correlation"]["identity_graph"]["edges"]
+    assert any(edge["shared"] == ["linked_usernames"] for edge in edges)
+
+
 class _LinkedUsernamesEngine:
     """Simula un motor que descubre `linked_usernames` (dato interno)."""
 

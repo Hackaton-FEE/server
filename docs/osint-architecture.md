@@ -418,6 +418,13 @@ Aplica [producto y datos](../rules/02-product-and-data.md).
   El correo del tercero nunca se persiste en claro: solo `identifier_sha256` e
   `identifier_hint`, igual que en el camino propio. El token es sin estado
   (`domain/verification/`); no hay tabla ni PII de terceros en la base de datos.
+  **Alcance del consentimiento y pivoteo**: decisión de producto — el
+  consentimiento (en cualquiera de los dos caminos) cubre **toda la
+  búsqueda de huella digital** resultante, no solo el identificador literal
+  dado. El pivoteo (§8) puede por tanto escanear alias que Maigret descubre
+  enlazados al perfil consentido, también en el camino de terceros; sigue
+  acotado (`FEE_OSINT_MAX_PIVOT_CANDIDATES`, profundidad 1) y sujeto a la
+  misma regla de reducción de ruido que cualquier otro hallazgo (§9.7).
 - **Retención**: `expires_at` (por defecto 7 días). Una rutina de limpieza
   (`ScanService.purge_expired()`, invocable por cron externo o al crear un
   escaneo) marca `EXPIRED` y borra los `OsintFinding`. Sin *cascade* implícito a
@@ -485,10 +492,26 @@ sequenceDiagram
     Run->>DB: status = COMPLETED · score · progress 100 · evento done
 ```
 
-**Pivoteo** (fase A → B): de la salida de Blackbird se extraen usernames
-alternativos y `ids_links`; los de confianza alta se añaden al conjunto que
-recibe Maigret. Profundidad 1 (sin recursión encadenada) en la entrega inicial;
-Maigret se ejecuta con `--no-recursion`.
+**Pivoteo** (`domain/osint/pivot.py` + `runner.py`, entregado en D2.5) —
+**desviación deliberada** de la Fase A→B descrita arriba: en vez de cablear
+"Blackbird alimenta a Maigret" específicamente (hoy Blackbird no extrae
+`ids_links`/`ids_usernames`, pendiente de auditoría real; ver D1.5), el diseño
+es genérico. Tras la Fase 1 completa (los 4 motores sobre el identificador
+original), `extract_pivot_candidates` recoge `linked_usernames` de los
+hallazgos `CONFIRMED`, excluye los alias ya consultados, **valida cada uno
+con `catalog.is_valid_identifier` como si viniera de la API** (son datos
+raspados de un perfil de terceros, una frontera de confianza distinta a la
+del propio usuario) y recorta a `FEE_OSINT_MAX_PIVOT_CANDIDATES` (3 por
+defecto). Si hay candidatos, una **Fase 2** vuelve a correr Blackbird y
+Maigret (los únicos motores por username) con esos alias. Profundidad 1 por
+construcción: los hallazgos de la Fase 2 nunca se inspeccionan para sacar más
+candidatos — no hay un tercer bucle, ni un contador de profundidad que se
+pueda subir sin querer. `scan.engines` conserva siempre las 4 claves
+canónicas (un motor que corre en ambas fases agrega su conteo de hallazgos,
+sin pseudo-motores tipo `"blackbird_pivot"`); el progreso reserva 70-95 para
+la Fase 2 y salta directo a 100 si no hubo candidatos. Los hallazgos
+pivotados pasan por la misma regla de reducción de ruido que cualquier otro
+(§9.7) desde el primer momento.
 
 **Descubrimiento de email** (para fase C): si el usuario no dio correo, se toma
 un `masked_email` o un correo en bio expuesto por Maigret. Si no hay ninguno,
@@ -694,7 +717,7 @@ Cada fase es un PR pequeño hacia `main` con aceptación observable.
 | **D1 · Capa de correlación** ✅ | `correlation.py` (grafo de identidad, timeline, contactos reconstruidos), migración `0003` (`OsintScan.correlation`), campo `correlation` en `DashboardResult`. Puro, sin red ni deps. Ver §9.5 | `test_correlation` verde; `results` incluye `correlation`; 143 pruebas; cobertura 96 % |
 | **D1.5 · Extracción rica + reducción de ruido** ✅ | `DETAIL_KEYS` ampliado (`following_count`/`repos_count`/`gists_count`/`linked_usernames`), `bio_links`/`url` de Holehe por fin poblados, arista de referencia explícita en el grafo, `noise.py` (regla de tres condiciones), frontera `PUBLIC_DETAIL_KEYS`. Ver §9.6-9.7 | `test_noise`/`test_findings` verdes; `linked_usernames` nunca sale en `results`; 228 pruebas; cobertura 96 % |
 | **D2 · Fuentes externas** | Have I Been Pwned (brechas), Gravatar/GitHub por email, como motores + adaptadores | contadores de brechas en `results`; degradación limpia sin API key |
-| **D2.5 · Pivoteo real** | `ScanRunner` relanza motores con `linked_usernames`/alias descubiertos (profundidad 1, `--no-recursion`); hallazgos pivotados sujetos a la regla de ruido desde el primer momento | pivoteo verificado end-to-end; sin recursión sin límite |
+| **D2.5 · Pivoteo real** ✅ | `pivot.py` (extracción de candidatos, validados y acotados) + `runner.py` (Fase 2 sobre Blackbird/Maigret, profundidad 1 por construcción, `scan.engines` sin pseudo-motores). Ver §8 | `test_pivot`/`test_runner` verdes; hallazgo pivotado llega a `results` sin filtrar `linked_usernames`; 240 pruebas; cobertura 96 % |
 | **D3 · Síntesis con LLM** | Informe narrativo y recomendaciones priorizadas sobre los `Finding[]`, tras flag de config y consentimiento; cacheado por hash de entrada; camino sin-LLM por defecto | opcional y degradable; sin PII en logs |
 | **3 · Hardening** | Proxy, *backoff*/circuit-breaker, `purge_expired()`, cuotas por cuenta, cifrado del identificador, `DELETE` | `docs/architecture.md` y `docs/auth-contract.md`/OpenAPI al día; checklist de seguridad |
 | **4 · Opcional** | Catálogo JustDelete.me para remediación; ExifTool + vector archivos; recursión profundidad 2 | fuera del alcance comprometido |

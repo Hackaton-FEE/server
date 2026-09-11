@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     # Raíz de las herramientas vendorizadas, cada una con su `.venv`.
     # La prepara `vendor/osint/setup.sh`.
     osint_vendor_dir: str = "vendor/osint"
+    # Tope de alias nuevos por escaneo en la segunda pasada de pivoteo (§8).
+    # Profundidad fija en 1: los hallazgos de esa segunda pasada nunca vuelven
+    # a extraer candidatos.
+    osint_max_pivot_candidates: int = 3
 
     # --- Verificación de correo (consentimiento para escanear a terceros) ---
     # Código estático para el hackathon: mientras no esté vacío, `confirm` acepta
