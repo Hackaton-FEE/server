@@ -18,6 +18,7 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       FEE_ENVIRONMENT: development
+      FEE_AUTH_MODE: ${FEE_AUTH_MODE:-passkey}
       FEE_DATABASE_URL: postgresql+psycopg://fee:fee@db:5432/fee
       FEE_JWT_SECRET: dev-insecure-secret-change-me-000000000000
     volumes:

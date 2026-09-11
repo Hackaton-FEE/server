@@ -1,10 +1,13 @@
-# Contrato de autenticación por passkey
+# Contrato de acceso y autenticación
 
 > Para el equipo Flutter (`Hackaton-FEE/app`). Todos los ejemplos usan datos
 > ficticios. Errores en formato RFC 7807 (`application/problem+json`).
 
 ## Idea general
 
+- `FEE_AUTH_MODE=passkey` es el valor predeterminado y conserva el flujo
+  FIDO2/WebAuthn. Para distribuir la versión de pruebas sin autenticador,
+  configurar explícitamente `FEE_AUTH_MODE=testing` en el servidor.
 - **Sin usuario ni contraseña.** El registro y el login se hacen con la passkey
   nativa del sistema (Face ID / Touch ID / huella), respaldada por una llave
   privada que nunca sale del Secure Enclave / Android Keystore.
@@ -16,6 +19,64 @@
   entre los dos pasos y devuélvelo **sin modificar**. Caduca en 120 s.
 - El login es *usernameless*: `authentication/options` no lleva
   `allowCredentials`; el SO ofrece las passkeys disponibles para el dominio.
+
+## Acceso temporal de pruebas (sin passkey ni registro previo)
+
+Con `FEE_AUTH_MODE=testing`, el cliente abre directamente el formulario de
+datos y obtiene una sesión en segundo plano; no pide alias de login, correo,
+firma, certificado ni validación de dominio:
+
+```http
+POST /api/v1/auth/testing/session
+Content-Type: application/json
+
+{}
+```
+
+Respuesta `201 Created`, con el mismo `SessionResponse` usado por passkeys:
+
+```json
+{
+  "access_token": "<JWT>",
+  "refresh_token": "<opaco>",
+  "token_type": "bearer",
+  "expires_in": 3600,
+  "user": { "id": "<UUID aleatorio>", "label": "Pruebas" }
+}
+```
+
+El cuerpo vacío es obligatorio y estricto: campos como `id`, `user_id`,
+`handle`, `label` o credenciales devuelven `422`. Cada creación asigna una
+cuenta aleatoria nueva, sin `Credential`, y nunca selecciona una cuenta
+existente. No hay una cuenta compartida entre testers. El endpoint tiene
+límite de **10 solicitudes por minuto e IP**.
+
+El cliente guarda estos tokens en almacenamiento seguro y los adjunta como
+`Authorization: Bearer <access_token>` a los escaneos, estado, resultados,
+eventos, verificación y chat. La API mantiene los controles de propietario,
+consentimiento y cuotas existentes. El flujo de análisis funciona sin hacer
+ninguna petición WebAuthn; omitir también el Bearer sigue devolviendo `401`.
+Los datos del formulario determinan qué se analiza; `user.label` solo
+identifica la sesión de pruebas.
+
+`/auth/token/refresh`, `/auth/logout` y `/auth/me` funcionan igual en ambos
+modos. El refresh se rota y conserva el `user.id`; en estas cuentas `/me`
+devuelve `credentials_count: 0`. Reutilizar la sesión local evita crear otra
+cuenta. Si se borra o pierde el refresh, una sesión nueva no recupera los
+escaneos de la anterior ni los de las cuentas passkey.
+
+En modo `testing`, las cuatro rutas `/auth/passkey/*` rechazan el acceso
+con `403 passkey-disabled` antes de generar retos o verificar firmas. Las
+credenciales almacenadas permanecen intactas. Volver a `FEE_AUTH_MODE=passkey`
+restablece esas rutas y cierra la creación de sesiones de pruebas con
+`403 testing-access-disabled`. Las cuentas sin credenciales dejan de poder
+usar sus tokens de acceso y refresh (`401 invalid-session`). Las sesiones de cuentas con passkeys
+siguen funcionando y las llaves no se borran.
+
+Ambos archivos Compose propagan `FEE_AUTH_MODE` y usan `passkey` si se omite.
+El despliegue debe habilitar `testing` antes de distribuir el cliente de
+pruebas; el cliente debe manejar `testing-access-disabled` sin recurrir al
+registro de passkeys. No se necesita migración ni borrar datos existentes.
 
 ## Paquete Flutter sugerido
 
@@ -135,6 +196,8 @@ POST /api/v1/verification/email/confirm
 | `invalid-credential` | 400 | la respuesta del autenticador no verifica, o esa passkey ya está registrada |
 | `unknown-credential` | 401 | la passkey no está registrada |
 | `invalid-session` | 401 | JWT o refresh inválido / expirado / revocado |
+| `testing-access-disabled` | 403 | Se solicita una sesión de pruebas sin `FEE_AUTH_MODE=testing` |
+| `passkey-disabled` | 403 | Se intenta registro o login passkey en modo `testing` |
 | `rate-limited` | 429 | demasiadas peticiones desde la misma IP |
 | `payload-too-large` | 413 | cuerpo mayor a 16 KB |
 

@@ -12,6 +12,13 @@ from fee_server.db.models import Credential, RefreshToken, User
 from fee_server.util.time import utcnow
 
 
+def create_testing_user(session: Session, *, handle: bytes) -> User:
+    user = User(handle=handle, label="Pruebas")
+    session.add(user)
+    session.flush()
+    return user
+
+
 def create_user_with_credential(
     session: Session,
     *,

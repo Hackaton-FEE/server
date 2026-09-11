@@ -69,7 +69,9 @@ def get_current_user(request: Request, session: SessionDep, settings: SettingsDe
         raise InvalidSessionError() from exc
 
     user = repository.get_user(session, user_id)
-    if user is None:
+    if user is None or (
+        settings.auth_mode == "passkey" and repository.count_credentials(session, user.id) == 0
+    ):
         raise InvalidSessionError()
     return user
 

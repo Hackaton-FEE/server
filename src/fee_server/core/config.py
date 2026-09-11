@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="FEE_", frozen=True, hide_input_in_errors=True)
 
     environment: Literal["development", "test", "production"] = "development"
+    # Solo habilitar `testing` al distribuir una versión de pruebas sin passkey.
+    # Conserva sesiones Bearer individuales y los límites de los análisis.
+    auth_mode: Literal["passkey", "testing"] = "passkey"
 
     # --- Base de datos ---
     # SQLAlchemy URL. Por defecto SQLite local; en producción, Postgres/Supabase.

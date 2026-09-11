@@ -1,8 +1,9 @@
-"""Rutas de autenticación por passkey (FIDO2 / WebAuthn).
+"""Acceso por passkey (FIDO2 / WebAuthn) o sesión individual de pruebas.
 
 Sin usuario ni contraseña. El registro y el login constan de dos pasos:
 `.../options` (el servidor propone un reto) y `.../verify` (el servidor valida
 la respuesta del autenticador y abre sesión).
+El acceso sin autenticador requiere habilitar explícitamente el modo `testing`.
 """
 
 from fastapi import APIRouter, Request, Response, status
@@ -19,9 +20,20 @@ from fee_server.domain.auth.schemas import (
     RegistrationOptionsRequest,
     RegistrationVerifyRequest,
     SessionResponse,
+    TestingSessionRequest,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+@router.post(
+    "/testing/session", response_model=SessionResponse, status_code=status.HTTP_201_CREATED
+)
+@limiter.limit("10/minute")
+def testing_session(
+    request: Request, body: TestingSessionRequest, service: AuthServiceDep
+) -> SessionResponse:
+    return service.start_testing_session()
 
 
 @router.post("/passkey/registration/options", response_model=ChallengeOptionsResponse)
