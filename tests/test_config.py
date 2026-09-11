@@ -198,9 +198,19 @@ def test_differentiated_proxies_fallback_and_effective_values(monkeypatch):
 
 @pytest.mark.parametrize(
     "field",
-    ["osint_max_concurrent_scans", "osint_engine_timeout_seconds", "osint_max_output_bytes"],
+    [
+        "osint_max_concurrent_scans",
+        "osint_engine_timeout_seconds",
+        "osint_max_output_bytes",
+        "osint_image_max_bytes",
+        "osint_image_fetch_timeout_seconds",
+    ],
 )
 @pytest.mark.parametrize("value", [0, -1])
 def test_osint_limits_must_be_positive(field, value):
     with pytest.raises(ValueError):
         Settings(**{field: value})
+
+
+def test_image_metadata_defaults_to_enabled():
+    assert Settings().osint_image_metadata_enabled is True

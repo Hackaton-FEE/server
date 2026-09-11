@@ -28,6 +28,7 @@ from fee_server.domain.osint.engines import (
     EngineRequest,
     build_engines,
 )
+from fee_server.domain.osint.enrichment import enrich_with_image_metadata
 from fee_server.domain.osint.findings import Finding
 from fee_server.domain.osint.noise import demote_unlinked_common_usernames
 from fee_server.domain.osint.normalize import merge_findings
@@ -103,6 +104,10 @@ def _run_scan(*, scan_id: str, engine_request: EngineRequest, settings: Settings
 
     try:
         merged = merge_findings(all_findings)
+        # Forense EXIF sobre avatar_url (§D2.6): antes del grafo/ruido a propósito,
+        # así un GPS/cámara real puede salvar a un hallazgo de la degradación por
+        # alias común, igual que full_name/location hoy (ver noise.py).
+        merged = enrich_with_image_metadata(merged, settings)
         # Dos grafos con propósitos distintos, no un cálculo duplicado: este se
         # construye sobre el conjunto crudo (antes de degradar) para que un
         # hallazgo de ruido pueda salvarse si otra cuenta lo corrobora;

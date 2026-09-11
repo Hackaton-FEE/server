@@ -52,6 +52,9 @@ DETAIL_KEYS: Final[frozenset[str]] = frozenset(
         "interests",
         "bio_links",
         "linked_usernames",
+        "image_gps_location",
+        "image_camera_model",
+        "image_taken_at",
     }
 )
 

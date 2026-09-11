@@ -33,7 +33,6 @@ normaliza sus salidas para alimentar un dashboard en la app móvil.
 
 ### Fuera (roadmap, no son dependencias implícitas)
 
-- Vector de archivos y forense de metadatos (ExifTool) → fase posterior.
 - Consultas de brechas/leaks (HIBP u otros) → fase posterior.
 - Catálogo JustDelete.me y motor de remediación/opt-out → fase posterior.
 - Casos reactivos, LPOA, preservación de evidencia, desindexación → otro módulo.
@@ -656,6 +655,43 @@ hallazgo pueda salvarse si otra cuenta lo corrobora), degrada, y **luego**
 calcula `exposure_score` y recalcula la correlación final sobre el conjunto ya
 limpio.
 
+### 9.8 Forense EXIF sobre `avatar_url` (D2.6)
+
+Tras `merge_findings` y antes del grafo de identidad, `enrich_with_image_metadata`
+(`enrichment.py`) recorre los `CONFIRMED` con `avatar_url` y les añade, si los
+hay, `image_gps_location` (decimal `"lat,lon"`), `image_camera_model` y
+`image_taken_at` — extraídos del EXIF real de la imagen, no autodeclarados por
+el perfil, así que cuentan como evidencia "rica" en `noise.py` igual que
+`full_name`/`location`. Dos módulos con fronteras separadas:
+
+- **`image_fetch.py`**: descarga acotada, sin escribir nunca a disco (los
+  bytes viven en memoria el tiempo mínimo). Barrera SSRF con *pinning*: se
+  resuelve el host una sola vez (`_resolve_pinned_ip`), se rechaza si
+  cualquier IP resuelta es privada/loopback/link-local/multicast/reservada,
+  y la petición se hace literalmente contra esa IP (no contra el hostname —
+  `httpx` no vuelve a resolver el DNS), con `Host`/SNI puestos aparte al
+  hostname original vía la extensión `sni_hostname`. Esto cierra el
+  DNS-rebinding (TTL≈0, IP distinta entre la validación y la conexión) que
+  un guard "resolver y luego conectar por hostname" no puede evitar. Sin
+  seguir redirecciones, tope de bytes verificado **mientras se descarga**
+  (`FEE_OSINT_IMAGE_MAX_BYTES`, no confía en `Content-Length`), tope de
+  **reloj de pared completo** además del timeout por-operación de httpx (un
+  servidor que gotea bytes justo por debajo del timeout de cada lectura no
+  puede alargar la descarga sin límite), y reusa
+  `effective_osint_normal_proxy` (mismo proxy que Blackbird; si falta en
+  producción, se loguea un warning explícito en vez de fallar en silencio).
+- **`image_metadata.py`**: puro, sin red; abre los bytes con Pillow y
+  extrae como mucho esas tres claves (no un volcado completo del EXIF).
+  Cualquier byte que no sea una imagen válida, o un EXIF ilegible, produce
+  `{}` sin lanzar — un avatar corrupto o malicioso no debe tumbar el
+  enriquecimiento ni el escaneo.
+
+`FEE_OSINT_IMAGE_METADATA_ENABLED=0` apaga el módulo por completo (el
+`runner` se comporta como si ningún hallazgo trajera `avatar_url`). En
+`environment=test` o `FEE_OSINT_ENGINE_MODE=fake`, `build_image_fetcher`
+devuelve un `FakeImageFetcher` determinista (una imagen 1×1 generada en
+memoria con EXIF fijo) — ningún test toca la red.
+
 ---
 
 ## 10. Configuración (`Settings`, prefijo `FEE_`)
@@ -670,6 +706,9 @@ limpio.
 | `FEE_OSINT_MAX_OUTPUT_BYTES` | `5_000_000` | cap de stdout por subproceso |
 | `FEE_OSINT_PROXY_URL` | vacío | proxy HTTP/SOCKS para las herramientas (crítico para Holehe e Ignorant desde cloud) |
 | `FEE_OSINT_VENDOR_DIR` | `vendor/osint` | raíz de las herramientas; cada una en `<dir>/<nombre>/.venv/bin` |
+| `FEE_OSINT_IMAGE_METADATA_ENABLED` | `1` | apaga el forense EXIF sobre `avatar_url` (§9.8) |
+| `FEE_OSINT_IMAGE_MAX_BYTES` | `8_000_000` | tope de bytes por imagen descargada, verificado en streaming |
+| `FEE_OSINT_IMAGE_FETCH_TIMEOUT_SECONDS` | `15` | timeout de la descarga de cada avatar |
 
 Validadores: si `FEE_OSINT_ENGINE_MODE=real` y falta `FEE_OSINT_ENC_KEY` o algún
 path, la app **no arranca** (mismo patrón que el secreto JWT en producción).
@@ -718,9 +757,10 @@ Cada fase es un PR pequeño hacia `main` con aceptación observable.
 | **D1.5 · Extracción rica + reducción de ruido** ✅ | `DETAIL_KEYS` ampliado (`following_count`/`repos_count`/`gists_count`/`linked_usernames`), `bio_links`/`url` de Holehe por fin poblados, arista de referencia explícita en el grafo, `noise.py` (regla de tres condiciones), frontera `PUBLIC_DETAIL_KEYS`. Ver §9.6-9.7 | `test_noise`/`test_findings` verdes; `linked_usernames` nunca sale en `results`; 228 pruebas; cobertura 96 % |
 | **D2 · Fuentes externas** | Have I Been Pwned (brechas), Gravatar/GitHub por email, como motores + adaptadores | contadores de brechas en `results`; degradación limpia sin API key |
 | **D2.5 · Pivoteo real** ✅ | `pivot.py` (extracción de candidatos, validados y acotados) + `runner.py` (Fase 2 sobre Blackbird/Maigret, profundidad 1 por construcción, `scan.engines` sin pseudo-motores). Ver §8 | `test_pivot`/`test_runner` verdes; hallazgo pivotado llega a `results` sin filtrar `linked_usernames`; 240 pruebas; cobertura 96 % |
+| **D2.6 · Forense EXIF de imágenes** ✅ | `image_fetch.py` (descarga acotada de `avatar_url`, SSRF guard, sin escribir a disco) + `image_metadata.py` (extracción pura con Pillow: GPS/cámara/fecha) + `enrichment.py` (orquestación tolerante a fallos, antes de correlación/ruido). Ver §9.8 | `test_image_fetch`/`test_image_metadata`/`test_enrichment`/`test_runner` verdes; GPS/cámara reales cuentan como evidencia rica en `noise.py`; 313 pruebas; cobertura 96 % |
 | **D3 · Síntesis con LLM** | Informe narrativo y recomendaciones priorizadas sobre los `Finding[]`, tras flag de config y consentimiento; cacheado por hash de entrada; camino sin-LLM por defecto | opcional y degradable; sin PII en logs |
 | **3 · Hardening** | Proxy, *backoff*/circuit-breaker, `purge_expired()`, cuotas por cuenta, cifrado del identificador, `DELETE` | `docs/architecture.md` y `docs/auth-contract.md`/OpenAPI al día; checklist de seguridad |
-| **4 · Opcional** | Catálogo JustDelete.me para remediación; ExifTool + vector archivos; recursión profundidad 2 | fuera del alcance comprometido |
+| **4 · Opcional** | Catálogo JustDelete.me para remediación; recursión profundidad 2 | fuera del alcance comprometido |
 
 ---
 

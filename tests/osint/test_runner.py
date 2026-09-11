@@ -289,6 +289,62 @@ def test_deleted_scan_stops_before_next_engine(client, settings, monkeypatch):
     assert calls == ["blackbird"]
 
 
+class _AvatarEngine:
+    """Aporta un `avatar_url` para ejercitar el enriquecimiento de imágenes."""
+
+    name = "blackbird"
+
+    def run(self, request: EngineRequest) -> EngineResult:
+        finding = Finding(
+            "GitHub",
+            "coding",
+            None,
+            "alias_de_prueba",
+            CONFIRMED,
+            90,
+            ("blackbird",),
+            {"full_name": "Ada Lovelace", "avatar_url": "https://cdn.example/ada.png"},
+        )
+        return EngineResult(self.name, ENGINE_OK, (finding,))
+
+
+def test_a_finding_with_an_avatar_gains_image_metadata_end_to_end(client, settings, monkeypatch):
+    scan_id = _make_scan(settings)
+    monkeypatch.setattr(runner, "build_engines", lambda _s: (_AvatarEngine(),))
+
+    runner.run_scan(
+        scan_id=scan_id,
+        engine_request=EngineRequest(usernames=("alias_de_prueba",)),
+        settings=settings,
+    )
+
+    with session_scope() as session:
+        scan = session.get(OsintScan, scan_id)
+        assert scan.status == "COMPLETED"
+        findings = repository.list_findings(session, scan_id)
+        github = next(f for f in findings if f.platform == "GitHub")
+        assert "image_camera_model" in github.details
+
+
+def test_image_metadata_disabled_leaves_the_scan_unaffected(client, settings, monkeypatch):
+    scan_id = _make_scan(settings)
+    monkeypatch.setattr(runner, "build_engines", lambda _s: (_AvatarEngine(),))
+    disabled_settings = settings.model_copy(update={"osint_image_metadata_enabled": False})
+
+    runner.run_scan(
+        scan_id=scan_id,
+        engine_request=EngineRequest(usernames=("alias_de_prueba",)),
+        settings=disabled_settings,
+    )
+
+    with session_scope() as session:
+        scan = session.get(OsintScan, scan_id)
+        assert scan.status == "COMPLETED"
+        findings = repository.list_findings(session, scan_id)
+        github = next(f for f in findings if f.platform == "GitHub")
+        assert "image_camera_model" not in github.details
+
+
 def test_concurrent_scan_limit_and_slot_release(monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Event, Lock

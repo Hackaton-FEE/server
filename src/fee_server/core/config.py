@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     # Profundidad fija en 1: los hallazgos de esa segunda pasada nunca vuelven
     # a extraer candidatos.
     osint_max_pivot_candidates: int = Field(default=3, ge=0, le=10)
+    # Forense EXIF sobre avatar_url (§D2.6). Apagarlo hace que el enriquecimiento
+    # se salte por completo, como si ningún hallazgo trajera avatar_url.
+    osint_image_metadata_enabled: bool = True
+    osint_image_max_bytes: int = Field(default=8_000_000, ge=1)
+    osint_image_fetch_timeout_seconds: int = Field(default=15, ge=1)
 
     # --- Verificación de correo (consentimiento para escanear a terceros) ---
     # Código estático para el hackathon: mientras no esté vacío, `confirm` acepta

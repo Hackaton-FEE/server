@@ -61,6 +61,9 @@ _RICH_DETAIL_KEYS = (
     "following_count",
     "repos_count",
     "bio_links",
+    "image_gps_location",
+    "image_camera_model",
+    "image_taken_at",
 )
 
 
