@@ -46,7 +46,8 @@ class ImageFetcher(Protocol):
 def _is_disallowed_ip(ip: str) -> bool:
     address = ipaddress.ip_address(ip)
     return (
-        address.is_private
+        not address.is_global
+        or address.is_private
         or address.is_loopback
         or address.is_link_local
         or address.is_multicast
@@ -64,8 +65,8 @@ def _resolve_pinned_ip(host: str, port: int) -> str | None:
     """
     try:
         results = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
-    except OSError as exc:
-        logger.warning("image_fetch: no se pudo resolver %s: %s", host, exc)
+    except OSError:
+        logger.warning("image_fetch: dns-resolution-failed")
         return None
     ips = [info[4][0] for info in results]
     if not ips or any(_is_disallowed_ip(ip) for ip in ips):
@@ -75,10 +76,14 @@ def _resolve_pinned_ip(host: str, port: int) -> str | None:
 
 def _pinned_target(url: str) -> tuple[str, str] | None:
     """`(url_con_la_ip_validada, hostname_original)`, o `None` si no es seguro."""
-    parts = urlsplit(url)
-    if parts.scheme not in _ALLOWED_SCHEMES or not parts.hostname:
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
         return None
-    port = parts.port or _DEFAULT_PORT[parts.scheme]
+    if parts.scheme not in _ALLOWED_SCHEMES or not parts.hostname or parts.username is not None:
+        return None
+    port = port or _DEFAULT_PORT[parts.scheme]
     ip = _resolve_pinned_ip(parts.hostname, port)
     if ip is None:
         return None
@@ -127,15 +132,21 @@ class RealImageFetcher:
         # El timeout de httpx es por-operación (connect/read/write), no del
         # total de la descarga: un servidor que gotea bytes justo por debajo
         # de ese límite en cada lectura podría alargar la descarga sin fin.
-        # Este `deadline` sí acota el reloj de pared completo.
+        # Se comprueba entre bloques; DNS ocurre antes y una lectura puede
+        # sumar otro timeout. No es un límite estricto del escaneo completo.
         deadline = time.monotonic() + timeout
 
         try:
-            with httpx.Client(proxy=proxy, timeout=timeout, follow_redirects=False) as client:
+            with httpx.Client(
+                proxy=proxy, timeout=timeout, follow_redirects=False, trust_env=False
+            ) as client:
                 with client.stream(
                     "GET",
                     pinned_url,
-                    headers={"Host": original_host},
+                    headers={
+                        "Host": urlsplit(url).netloc,
+                        "Accept-Encoding": "identity",
+                    },
                     extensions={"sni_hostname": original_host},
                 ) as response:
                     if response.is_redirect or response.status_code != httpx.codes.OK:
@@ -143,18 +154,20 @@ class RealImageFetcher:
                     content_type = response.headers.get("content-type", "")
                     if not content_type.startswith("image/"):
                         return None
+                    if response.headers.get("content-encoding", "identity") != "identity":
+                        return None
                     chunks = bytearray()
-                    for chunk in response.iter_bytes():
+                    for chunk in response.iter_raw():
                         chunks.extend(chunk)
                         if len(chunks) > max_bytes:
-                            logger.warning("image_fetch: %s supera el tope de bytes", url)
+                            logger.warning("image_fetch: byte-limit-exceeded")
                             return None
                         if time.monotonic() > deadline:
-                            logger.warning("image_fetch: %s superó el tope de reloj", url)
+                            logger.warning("image_fetch: time-limit-exceeded")
                             return None
                     return bytes(chunks)
-        except httpx.HTTPError as exc:
-            logger.warning("image_fetch: fallo al descargar %s: %s", url, exc)
+        except httpx.HTTPError:
+            logger.warning("image_fetch: download-failed")
             return None
 
 

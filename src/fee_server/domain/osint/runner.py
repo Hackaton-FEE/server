@@ -98,6 +98,8 @@ def _run_scan(*, scan_id: str, engine_request: EngineRequest, settings: Settings
         for index, engine in enumerate(pivot_engines, start=1):
             if not _is_active(scan_id):
                 return
+            _mark_engine_running(engine_state, engine.name)
+            _checkpoint(scan_id, progress=_PHASE1_PROGRESS_BUDGET, engines=engine_state)
             all_findings.extend(_run_engine(scan_id, engine, pivot_request, engine_state))
             progress = _PHASE1_PROGRESS_BUDGET + min(_PHASE2_PROGRESS_BUDGET, index * step2)
             _checkpoint(scan_id, progress=progress, engines=engine_state)
@@ -188,6 +190,21 @@ def _record_engine_result(
         entry["error_category"] = error_category
     elif previous and previous.get("error_category"):
         entry["error_category"] = previous["error_category"]
+    engine_state[name] = entry
+
+
+def _mark_engine_running(engine_state: dict[str, dict], name: str) -> None:
+    """Quita `finished_at` antes de relanzar un motor (Fase 2 de pivoteo).
+
+    Sin esto, `service.py::build_status` seguiría listando el motor como
+    completado (por su entrada de la Fase 1) mientras en realidad está
+    corriendo otra vez.
+    """
+    previous = engine_state.get(name)
+    if previous is None:
+        return
+    entry = dict(previous)
+    entry.pop("finished_at", None)
     engine_state[name] = entry
 
 

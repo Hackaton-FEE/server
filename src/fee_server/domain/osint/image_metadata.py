@@ -9,6 +9,7 @@ decenas de tags irrelevantes o incluso basura binaria).
 
 import io
 import logging
+import math
 from datetime import datetime
 
 from PIL import ExifTags, Image, UnidentifiedImageError
@@ -25,16 +26,22 @@ def _to_decimal(dms: tuple, ref: str) -> float | None:
     """Convierte grados/minutos/segundos EXIF (con signo por `ref`) a decimal."""
     try:
         degrees, minutes, seconds = (float(part) for part in dms)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError, ZeroDivisionError):
+        return None
+    if not all(math.isfinite(v) for v in (degrees, minutes, seconds)):
+        return None
+    if degrees < 0 or not 0 <= minutes < 60 or not 0 <= seconds < 60:
         return None
     value = degrees + minutes / 60 + seconds / 3600
     return -value if ref in ("S", "W") else value
 
 
 def _gps_location(gps: dict) -> str | None:
+    if gps.get(1) not in ("N", "S") or gps.get(3) not in ("E", "W"):
+        return None
     lat = _to_decimal(gps.get(2), str(gps.get(1, "")))
     lon = _to_decimal(gps.get(4), str(gps.get(3, "")))
-    if lat is None or lon is None:
+    if lat is None or lon is None or abs(lat) > 90 or abs(lon) > 180:
         return None
     return f"{lat:.6f},{lon:.6f}"
 
@@ -47,7 +54,9 @@ def _camera_model(exif: Image.Exif) -> str | None:
 
 
 def _taken_at(exif: Image.Exif) -> str | None:
-    raw = exif.get(36867) or exif.get(306)  # DateTimeOriginal | DateTime
+    raw = (
+        exif.get_ifd(ExifTags.IFD.Exif).get(36867) or exif.get(36867) or exif.get(306)
+    )  # DateTimeOriginal | DateTime
     if not raw:
         return None
     try:
@@ -64,14 +73,24 @@ def extract_image_metadata(image_bytes: bytes) -> dict[str, object]:
             image.verify()
         with Image.open(io.BytesIO(image_bytes)) as image:
             exif = image.getexif()
-    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
-        # DecompressionBombError es un `Exception` plano en Pillow, no un
-        # OSError/ValueError — sin listarlo aparte, una imagen con
-        # dimensiones declaradas absurdas rompería la garantía de "nunca
-        # lanza" de esta función.
-        logger.warning("image_metadata: no se pudo abrir la imagen: %s", exc)
+            return _extract_exif(exif)
+    except (  # Malformed image/IFD values must not discard other findings.
+        UnidentifiedImageError,
+        OSError,
+        ValueError,
+        TypeError,
+        SyntaxError,
+        OverflowError,
+        ZeroDivisionError,
+        KeyError,
+        IndexError,
+        Image.DecompressionBombError,
+    ):
+        logger.warning("image_metadata: invalid-image-metadata")
         return {}
 
+
+def _extract_exif(exif: Image.Exif) -> dict[str, object]:
     if not exif:
         return {}
 

@@ -193,3 +193,33 @@ def test_warns_when_production_has_no_proxy_configured(caplog):
         build_image_fetcher(settings)
 
     assert any("sin FEE_OSINT_NORMAL_PROXY_URL" in message for message in caplog.messages)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://cdn.example:invalid/a.jpg",
+        "http://[broken/a.jpg",
+        "http://user:secret@cdn.example/a.jpg",
+    ],
+)
+def test_invalid_or_credential_bearing_urls_are_rejected(url):
+    assert _pinned_target(url) is None
+
+
+def test_shared_address_space_is_rejected():
+    assert _is_disallowed_ip("100.64.0.1")
+
+
+def test_environment_proxy_does_not_override_direct_download(local_server, monkeypatch):
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("ALL_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("NO_PROXY", "")
+    assert _fetcher(local_server).fetch(f"{local_server}/ok.jpg") is not None
+
+
+def test_byte_limit_warning_does_not_expose_url(local_server, caplog):
+    url = f"{local_server}/big.jpg"
+    assert _fetcher(local_server).fetch(url) is None
+    assert "byte-limit-exceeded" in caplog.text
+    assert url not in caplog.text

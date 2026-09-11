@@ -53,3 +53,33 @@ def test_partial_gps_data_is_omitted_rather_than_guessed():
     details = extract_image_metadata(_jpeg_bytes(exif=exif))
 
     assert "image_gps_location" not in details
+
+
+def test_reads_standard_exif_sub_ifd_capture_date():
+    from PIL import ExifTags
+
+    exif = Image.new("RGB", (1, 1)).getexif()
+    exif[ExifTags.IFD.Exif] = {36867: "2023:07:04 08:15:30"}
+    exif[306] = "2025:01:01 00:00:00"
+    details = extract_image_metadata(_jpeg_bytes(exif=exif))
+    assert details["image_taken_at"] == "2023-07-04T08:15:30"
+
+
+def test_invalid_gps_does_not_discard_camera_metadata():
+    exif = _exif_with_gps(lat=(190.0, 0.0, 0.0))
+    details = extract_image_metadata(_jpeg_bytes(exif=exif))
+    assert "image_gps_location" not in details
+    assert details["image_camera_model"] == "Acme Cam-9000"
+
+
+def test_gps_requires_hemisphere_and_finite_valid_coordinates():
+    from fee_server.domain.osint.image_metadata import _gps_location
+
+    for latitude, ref in [
+        ((19, 0, 0), ""),
+        ((float("nan"), 0, 0), "N"),
+        ((19, 60, 0), "N"),
+        ((19, 0, float("inf")), "N"),
+    ]:
+        assert _gps_location({1: ref, 2: latitude, 3: "W", 4: (99, 0, 0)}) is None
+    assert _gps_location({1: "S", 2: (19, 0, 0), 3: "E", 4: (99, 0, 0)}) == "-19.000000,99.000000"

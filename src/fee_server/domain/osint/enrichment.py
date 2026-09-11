@@ -26,14 +26,12 @@ def _fetch_details(fetcher: ImageFetcher, url: str, cache: dict[str, dict]) -> d
         if image_bytes:
             details = extract_image_metadata(image_bytes)
     except Exception:  # noqa: BLE001 - un avatar no puede tumbar el enriquecimiento
-        logger.exception("enrichment: fallo inesperado al procesar %s", url)
+        logger.warning("enrichment: image-processing-failed")
     cache[url] = details
     return details
 
 
-def enrich_with_image_metadata(
-    findings: Sequence[Finding], settings: Settings
-) -> list[Finding]:
+def enrich_with_image_metadata(findings: Sequence[Finding], settings: Settings) -> list[Finding]:
     """Devuelve una lista nueva; nunca muta los `Finding` de entrada."""
     fetcher = build_image_fetcher(settings)
     if fetcher is None:

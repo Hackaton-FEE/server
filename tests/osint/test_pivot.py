@@ -4,9 +4,9 @@ from fee_server.domain.osint.findings import CONFIRMED, POTENTIAL_MATCH, RATE_LI
 from fee_server.domain.osint.pivot import extract_pivot_candidates
 
 
-def _finding(status=CONFIRMED, linked=None) -> Finding:
+def _finding(status=CONFIRMED, linked=None, username="origin_alias", platform="Site") -> Finding:
     details = {"linked_usernames": linked} if linked is not None else {}
-    return Finding("Site", "other", None, "origin_alias", status, 90, ("maigret",), details)
+    return Finding(platform, "other", None, username, status, 90, ("maigret",), details)
 
 
 def test_no_findings_yields_no_candidates():
@@ -53,6 +53,19 @@ def test_result_is_capped_and_alphabetically_sorted():
     candidates = extract_pivot_candidates(findings, already_queried=(), max_candidates=2)
 
     assert candidates == ("alpha_h", "bravo_h")
+
+
+def test_an_alias_already_confirmed_elsewhere_in_the_scan_is_not_repeated():
+    """Si la Fase 1 ya resolvió esa cuenta por su cuenta, no vale la pena
+    volver a consultarla en la Fase 2 solo porque otro perfil la menciona."""
+    findings = [
+        _finding(linked=["richprofile99"]),
+        _finding(username="richprofile99", platform="OtherSite", linked=None),
+    ]
+
+    candidates = extract_pivot_candidates(findings, already_queried=(), max_candidates=3)
+
+    assert candidates == ()
 
 
 def test_non_confirmed_findings_are_ignored():

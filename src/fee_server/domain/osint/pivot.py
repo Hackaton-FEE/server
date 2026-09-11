@@ -26,6 +26,13 @@ def extract_pivot_candidates(
     determinista antes de recortar al tope.
     """
     excluded = {alias.strip().casefold() for alias in already_queried if alias.strip()}
+    # No pivotear hacia un alias que la Fase 1 ya confirmó por su cuenta —
+    # sería repetir trabajo sobre una cuenta que el escaneo ya resolvió.
+    excluded |= {
+        finding.username.strip().casefold()
+        for finding in findings
+        if finding.status == CONFIRMED and finding.username and finding.username.strip()
+    }
     candidates: dict[str, str] = {}  # casefold -> forma original (para consultar el sitio)
 
     for finding in findings:

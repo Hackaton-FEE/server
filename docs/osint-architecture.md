@@ -660,9 +660,9 @@ limpio.
 Tras `merge_findings` y antes del grafo de identidad, `enrich_with_image_metadata`
 (`enrichment.py`) recorre los `CONFIRMED` con `avatar_url` y les añade, si los
 hay, `image_gps_location` (decimal `"lat,lon"`), `image_camera_model` y
-`image_taken_at` — extraídos del EXIF real de la imagen, no autodeclarados por
-el perfil, así que cuentan como evidencia "rica" en `noise.py` igual que
-`full_name`/`location`. Dos módulos con fronteras separadas:
+`image_taken_at`, extraídos del EXIF de la imagen. Se consideran detalles
+"ricos" en `noise.py`, pero EXIF es editable: no acredita la identidad del
+propietario ni su ubicación actual. Dos módulos con fronteras separadas:
 
 - **`image_fetch.py`**: descarga acotada, sin escribir nunca a disco (los
   bytes viven en memoria el tiempo mínimo). Barrera SSRF con *pinning*: se
@@ -675,9 +675,9 @@ el perfil, así que cuentan como evidencia "rica" en `noise.py` igual que
   un guard "resolver y luego conectar por hostname" no puede evitar. Sin
   seguir redirecciones, tope de bytes verificado **mientras se descarga**
   (`FEE_OSINT_IMAGE_MAX_BYTES`, no confía en `Content-Length`), tope de
-  **reloj de pared completo** además del timeout por-operación de httpx (un
-  servidor que gotea bytes justo por debajo del timeout de cada lectura no
-  puede alargar la descarga sin límite), y reusa
+  tiempo transcurrido comprobado entre bloques además del timeout por operación
+  de httpx. La resolución DNS ocurre antes de ese presupuesto y una lectura
+  puede consumir hasta otro timeout; no es un límite estricto del escaneo. Reusa
   `effective_osint_normal_proxy` (mismo proxy que Blackbird; si falta en
   producción, se loguea un warning explícito en vez de fallar en silencio).
 - **`image_metadata.py`**: puro, sin red; abre los bytes con Pillow y
@@ -685,6 +685,22 @@ el perfil, así que cuentan como evidencia "rica" en `noise.py` igual que
   Cualquier byte que no sea una imagen válida, o un EXIF ilegible, produce
   `{}` sin lanzar — un avatar corrupto o malicioso no debe tumbar el
   enriquecimiento ni el escaneo.
+
+Las descargas usan exclusivamente el proxy normal configurado (o salida directa),
+sin heredar proxies del entorno ni consumir el proxy residencial por defecto.
+Se pide contenido sin compresión HTTP y se rechaza contenido comprimido para
+aplicar el límite a los bytes leídos sin descompresión previa. Los errores solo
+registran categorías, nunca URLs ni texto de excepciones de terceros.
+
+La fecha prioriza `DateTimeOriginal` en el sub-IFD EXIF estándar; se conserva
+el fallback para archivos antiguos. GPS exige hemisferios, valores finitos y
+rangos válidos; los datos inválidos se omiten. La fecha no incluye zona horaria.
+No se descargan redirecciones. Un avatar sin EXIF no produce estos campos.
+Los metadatos se guardan en `details` del hallazgo y salen por el endpoint de
+resultados existente: no hay endpoint nuevo de carga de fotos, búsqueda inversa,
+mapa ni reprocesamiento de escaneos ya completados. El cliente debe presentar
+explícitamente estos campos nuevos. Los avatares se procesan secuencialmente,
+con caché por URL dentro del escaneo; muchos avatares pueden alargar su cierre.
 
 `FEE_OSINT_IMAGE_METADATA_ENABLED=0` apaga el módulo por completo (el
 `runner` se comporta como si ningún hallazgo trajera `avatar_url`). En

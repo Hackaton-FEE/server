@@ -112,3 +112,17 @@ def test_a_disabled_fetcher_leaves_findings_unchanged():
     enriched = enrich_with_image_metadata(findings, Settings(osint_image_metadata_enabled=False))
 
     assert enriched == findings
+
+
+def test_image_errors_do_not_log_personal_urls_or_exception_text(monkeypatch, caplog):
+    class FailingFetcher:
+        def fetch(self, url):
+            raise RuntimeError(url)
+
+    url = "https://cdn.example/private-person.jpg?token=private-token"
+    settings = _settings_with_fetcher(monkeypatch, FailingFetcher())
+    original = [_finding(avatar_url=url)]
+    assert enrich_with_image_metadata(original, settings) == original
+    assert "image-processing-failed" in caplog.text
+    assert url not in caplog.text
+    assert "private-token" not in caplog.text

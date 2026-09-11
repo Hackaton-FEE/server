@@ -210,6 +210,41 @@ def test_pivoting_scans_a_username_linked_in_phase_one(client, settings, monkeyp
         assert "GitLab" in platforms  # el hallazgo de la Fase 2 llegó
 
 
+def test_a_pivoted_engine_is_not_reported_as_completed_while_it_reruns(
+    client, settings, monkeypatch
+):
+    """Regresión: antes de relanzar blackbird en la Fase 2, su entrada de la
+    Fase 1 (con `finished_at` ya puesto) no debe seguir marcándolo como
+    completado — si no, un polling a mitad de la Fase 2 lo vería como listo
+    mientras en realidad está corriendo otra vez."""
+    scan_id = _make_scan(settings)
+    monkeypatch.setattr(
+        runner, "build_engines", lambda _s: (_LinkDiscoveryEngine(), _PivotAwareEngine())
+    )
+
+    snapshots: list[dict] = []
+    real_checkpoint = runner._checkpoint
+
+    def _spy_checkpoint(scan_id, *, progress, engines):
+        snapshots.append(dict(engines))
+        real_checkpoint(scan_id, progress=progress, engines=engines)
+
+    monkeypatch.setattr(runner, "_checkpoint", _spy_checkpoint)
+
+    runner.run_scan(
+        scan_id=scan_id,
+        engine_request=EngineRequest(usernames=("origin_alias",)),
+        settings=settings,
+    )
+
+    # El primer checkpoint de la Fase 2 para "blackbird" (justo antes de
+    # volver a correrlo) no debe tener `finished_at`.
+    marked_running = [
+        snap for snap in snapshots if "blackbird" in snap and "finished_at" not in snap["blackbird"]
+    ]
+    assert marked_running
+
+
 class _BoomInPhaseTwoEngine:
     """Falla solo cuando se le consulta el alias pivotado (Fase 2)."""
 
