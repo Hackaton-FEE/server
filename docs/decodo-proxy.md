@@ -83,6 +83,9 @@ sociales. Registrar por separado el resultado del despliegue y sus imágenes en
 - `FEE_OSINT_MAX_OUTPUT_BYTES` acota stdout en memoria y la lectura de informes.
   Stderr conserva como máximo 4096 bytes. Estos límites **no son una cuota de
   tráfico de red**; las herramientas pueden recibir más bytes por HTTP.
+- Holehe e Ignorant arrancan con su comprobación de actualizaciones desactivada:
+  no consultan PyPI ni intentan autoactualizarse a través del proxy residencial.
+  Las versiones se administran en `vendor/osint/setup.sh`.
 - Blackbird ejecuta código/datos en un directorio temporal independiente por
   alias, sin copiar informes previos ni compartir logs entre escaneos.
 - Un timeout, salida truncada o código de salida fallido no puede acreditar

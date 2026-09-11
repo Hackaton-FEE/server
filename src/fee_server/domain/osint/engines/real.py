@@ -100,6 +100,17 @@ class _RealEngine:
         # resolverlo rompe la detección del venv (pyvenv.cfg).
         return path.absolute()
 
+    def _account_recovery_command(self) -> list[str]:
+        python = self._require(self._vendor / self.name / ".venv" / "bin" / "python")
+        # Las versiones están fijadas en setup.sh. Estos CLI consultan PyPI
+        # antes de argparse y pueden incluso autoactualizarse usando el proxy.
+        # Deshabilitar únicamente esa comprobación mantiene intactos los módulos.
+        return [
+            str(python),
+            "-c",
+            f"from {self.name} import core; core.check_update = lambda: None; core.main()",
+        ]
+
     @staticmethod
     def _safe_username(username: str) -> str:
         # Defensa en profundidad: el servicio ya validó, pero el adaptador no
@@ -243,12 +254,12 @@ class HoleheEngine(_RealEngine):
         if not request.email:
             return EngineResult(self.name, ENGINE_SKIPPED)
 
-        binary = self._require(self._vendor / "holehe" / ".venv" / "bin" / "holehe")
+        command = self._account_recovery_command()
         email = self._safe_email(request.email)
 
         with _workdir() as work:
             argv = [
-                str(binary),
+                *command,
                 email,
                 "--no-color",
                 "--no-clear",
@@ -287,7 +298,7 @@ class IgnorantEngine(_RealEngine):
         if not request.phone:
             return EngineResult(self.name, ENGINE_SKIPPED)
 
-        binary = self._require(self._vendor / "ignorant" / ".venv" / "bin" / "ignorant")
+        command = self._account_recovery_command()
         phone = self._safe_phone(request.phone)
         try:
             country, national = split_phone(phone)
@@ -296,7 +307,7 @@ class IgnorantEngine(_RealEngine):
 
         with _workdir() as work:
             argv = [
-                str(binary),
+                *command,
                 country,
                 national,
                 "--no-color",

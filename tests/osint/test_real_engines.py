@@ -28,7 +28,7 @@ def _real_settings(vendor_dir: str) -> Settings:
 
 
 def _install_stub_tool(root: Path, tool: str, *executables: str) -> None:
-    for executable in executables:
+    for executable in set(executables) | {"python"}:
         path = root / tool / ".venv" / "bin" / executable
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("#!/bin/sh\n")
@@ -223,7 +223,7 @@ def test_ignorant_engine_parses_stdout(tmp_path, monkeypatch):
     settings = _real_settings(str(tmp_path))
 
     def fake_run_tool(argv, **_kwargs):
-        assert argv[1:3] == ["34", "611223344"]  # +34 611223344 dividido por split_phone
+        assert argv[3:5] == ["34", "611223344"]  # +34 611223344 dividido por split_phone
         return ToolRun(
             0, "[+] instagram.com\n[x] amazon.com\n", "", timed_out=False, truncated=False
         )
@@ -377,3 +377,36 @@ def test_oversized_report_is_rejected(tmp_path):
     report.write_bytes(b"x" * 101)
     with pytest.raises(ToolExecutionError, match="demasiado grande"):
         real._read_report(report, 100)
+
+
+@pytest.mark.parametrize(
+    "name,engine,engine_input",
+    [
+        ("holehe", real.HoleheEngine, EngineRequest(usernames=(), email="persona@example.com")),
+        ("ignorant", real.IgnorantEngine, EngineRequest(usernames=(), phone="+34611223344")),
+    ],
+)
+def test_account_recovery_skips_update_check(tmp_path, monkeypatch, name, engine, engine_input):
+    import sys
+
+    tool = tmp_path / name / ".venv" / "bin"
+    tool.mkdir(parents=True)
+    (tool / "python").symlink_to(sys.executable)
+    module = tmp_path / name / "core.py"
+    module.write_text(
+        "def check_update(): raise RuntimeError('unexpected update traffic')\n"
+        "def main():\n"
+        "    check_update()\n"
+        "    print('3 websites checked in 0.1 seconds')\n"
+    )
+    original = real.run_tool
+    outcomes = []
+
+    def execute(argv, **kwargs):
+        outcomes.append(original(argv, **kwargs, env_extra={"PYTHONPATH": str(tmp_path)}))
+        return outcomes[-1]
+
+    monkeypatch.setattr(real, "run_tool", execute)
+    engine(_real_settings(str(tmp_path))).run(engine_input)
+    assert outcomes[0].returncode == 0
+    assert "websites checked" in outcomes[0].stdout
