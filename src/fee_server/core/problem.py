@@ -80,6 +80,12 @@ class InvalidConversationError(AssistantError):
     detail = "La conversación no es válida: revisa los mensajes enviados."
 
 
+class AssistantUnavailableError(AssistantError):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "assistant-unavailable"
+    detail = "El asistente no está disponible en este momento."
+
+
 class OsintError(ProblemError):
     """Base de los errores del motor OSINT."""
 

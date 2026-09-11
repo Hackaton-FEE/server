@@ -41,6 +41,12 @@ def test_osint_defaults_to_simulated_engines():
     assert settings.osint_uses_real_engines is False
 
 
+@pytest.mark.parametrize("limit", [-1, 11])
+def test_pivot_candidate_limit_is_bounded(limit):
+    with pytest.raises(ValidationError, match="osint_max_pivot_candidates"):
+        Settings(osint_max_pivot_candidates=limit)
+
+
 def test_osint_real_mode_is_disabled_under_test_environment(monkeypatch):
     monkeypatch.setenv("FEE_ENVIRONMENT", "test")
     monkeypatch.setenv("FEE_OSINT_ENGINE_MODE", "real")

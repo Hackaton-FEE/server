@@ -3,6 +3,20 @@
 CHAT = "/api/v1/assistant/chat"
 
 
+def test_production_never_returns_fake_advice(client, headers, settings):
+    client.app.state.settings = settings.model_copy(update={"environment": "production"})
+    response = client.post(CHAT, json=_payload(("user", "hola")), headers=headers)
+    assert response.status_code == 503
+    assert response.json()["type"].endswith("/assistant-unavailable")
+
+
+def test_disabled_assistant_is_unavailable_before_streaming(client, headers, settings):
+    client.app.state.settings = settings.model_copy(update={"assistant_mode": "disabled"})
+    response = client.post(CHAT, json=_payload(("user", "hola")), headers=headers)
+    assert response.status_code == 503
+    assert response.headers["content-type"].startswith("application/problem+json")
+
+
 def _payload(*messages: tuple[str, str]) -> dict:
     return {"messages": [{"role": r, "content": c} for r, c in messages]}
 
@@ -16,7 +30,7 @@ def test_chat_streams_tokens_and_ends_with_done(client, headers):
     assert response.headers["content-type"].startswith("text/event-stream")
     assert response.headers["cache-control"] == "no-store"
     assert "event: token" in response.text
-    assert response.text.strip().endswith('event: done\ndata: {}')
+    assert response.text.strip().endswith("event: done\ndata: {}")
 
 
 def test_chat_requires_authentication(client):

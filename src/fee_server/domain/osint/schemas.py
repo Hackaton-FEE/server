@@ -1,6 +1,7 @@
 """Modelos de petición y respuesta del módulo OSINT."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -32,6 +33,15 @@ class ScanAccepted(BaseModel):
     events_url: str
 
 
+class EngineStatusModel(BaseModel):
+    status: str
+    findings: int = 0
+    started_at: str | None = None
+    finished_at: str | None = None
+    error_category: str | None = None
+    runs: int = 1
+
+
 class ScanStatusResponse(BaseModel):
     scan_id: str
     status: str
@@ -39,6 +49,8 @@ class ScanStatusResponse(BaseModel):
     completed_engines: list[str]
     running_engines: list[str]
     partial_findings_count: int
+    engines: dict[str, EngineStatusModel] = Field(default_factory=dict)
+    error_category: str | None = None
 
 
 class FindingItem(BaseModel):
@@ -126,3 +138,7 @@ class DashboardResult(BaseModel):
     summary: DashboardSummary
     categories: list[DashboardCategory]
     correlation: CorrelationModel | None = None
+    scan_status: str = "COMPLETED"
+    coverage: Literal["complete", "partial", "none", "unknown"] = "unknown"
+    engines: dict[str, EngineStatusModel] = Field(default_factory=dict)
+    error_category: str | None = None

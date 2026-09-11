@@ -44,12 +44,12 @@ def chat(
 
 
 async def _stream(messages: list[dict[str, str]], settings: Settings) -> AsyncIterator[str]:
-    gateway = build_gateway(settings)
     try:
+        gateway = build_gateway(settings)
         async for chunk in gateway.stream_reply(messages):
             yield format_event("token", {"content": chunk})
     except Exception:  # noqa: BLE001 - el proveedor ya empezó a responder (200)
-        logger.exception("assistant: el proveedor falló durante el streaming")
+        logger.warning("assistant: el proveedor falló durante el streaming")
         yield format_event("error", {"detail": "assistant-unavailable"})
         return
     yield format_event("done", {})

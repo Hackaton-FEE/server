@@ -47,6 +47,13 @@ _MAIGRET_ID_MAP = {
     "fullname": "full_name",
     "company": "company",
 }
+# Campos numéricos de `ids`; se castean a `int` igual que `follower_count`.
+_MAIGRET_COUNT_MAP = {
+    "follower_count": "followers",
+    "following_count": "following_count",
+    "public_repos_count": "repos_count",
+    "public_gists_count": "gists_count",
+}
 
 
 def _empty(value: object) -> bool:
@@ -113,12 +120,39 @@ def _maigret_details(ids: Mapping[str, object]) -> dict[str, object]:
         value = ids.get(source_key)
         if not _empty(value):
             details[dest_key] = value
-    followers = ids.get("follower_count")
-    if followers not in (None, ""):
+    for source_key, dest_key in _MAIGRET_COUNT_MAP.items():
+        value = ids.get(source_key)
+        if value in (None, ""):
+            continue
         try:
-            details["followers"] = int(followers)
+            details[dest_key] = int(value)
         except (TypeError, ValueError):
             pass
+    return details
+
+
+def _maigret_links(entry: Mapping[str, object]) -> dict[str, object]:
+    """Munición de pivoteo que Maigret ya calcula (`ids_links`/`ids_usernames`).
+
+    `bio_links` es público (son enlaces que el propio perfil expone); las
+    cuentas relacionadas (`linked_usernames`) son solo internas — alimentan el
+    grafo de identidad, nunca se persisten tal cual (`findings.py:
+    PUBLIC_DETAIL_KEYS`).
+    """
+    details: dict[str, object] = {}
+    links = entry.get("ids_links")
+    if isinstance(links, list):
+        urls = sorted({str(url).strip() for url in links if str(url).strip()})
+        if urls:
+            details["bio_links"] = urls
+
+    usernames_map = entry.get("ids_usernames")
+    if isinstance(usernames_map, dict):
+        usernames = sorted(
+            {str(value).strip() for value in usernames_map.values() if str(value).strip()}
+        )
+        if usernames:
+            details["linked_usernames"] = usernames
     return details
 
 
@@ -150,6 +184,7 @@ def parse_maigret_simple_json(text: str, *, username: str | None = None) -> list
             state = CONFIRMED
             confidence = MAIGRET_WITH_IDS if ids else MAIGRET_WITHOUT_IDS
 
+        details = {**_maigret_details(ids), **_maigret_links(entry)}
         findings.append(
             Finding(
                 platform=_MAIGRET_SOURCE_SUFFIX.sub("", str(status.get("site_name") or "")).strip(),
@@ -159,7 +194,7 @@ def parse_maigret_simple_json(text: str, *, username: str | None = None) -> list
                 status=state,
                 confidence=confidence,
                 sources=("maigret",),
-                details=_maigret_details(ids),
+                details=details,
             )
         )
     return findings
@@ -177,6 +212,11 @@ def _holehe_details(row: Mapping[str, str]) -> dict[str, object]:
     if phone:
         details["masked_phone"] = phone
     return details
+
+
+def _holehe_url(row: Mapping[str, str]) -> str | None:
+    domain = (row.get("domain") or "").strip()
+    return f"https://{domain}" if domain else None
 
 
 # --- Ignorant ----------------------------------------------------------
@@ -235,7 +275,7 @@ def parse_holehe_csv(text: str) -> list[Finding]:
                 Finding(
                     name,
                     "other",
-                    None,
+                    _holehe_url(row),
                     None,
                     CONFIRMED,
                     HOLEHE_CONFIDENCE,

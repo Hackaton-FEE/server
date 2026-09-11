@@ -32,6 +32,9 @@ CATEGORIES: Final[tuple[str, ...]] = (
 )
 
 # Claves permitidas dentro de `details`. Todo lo demás se descarta al normalizar.
+# Es la frontera "no es basura": lo que entra aquí fluye por todo el pipeline
+# interno (merge, grafo de identidad, reducción de ruido, score). No implica
+# que todo esto se muestre en la app — ver `PUBLIC_DETAIL_KEYS`.
 DETAIL_KEYS: Final[frozenset[str]] = frozenset(
     {
         "account_id",
@@ -40,13 +43,26 @@ DETAIL_KEYS: Final[frozenset[str]] = frozenset(
         "creation_date",
         "location",
         "followers",
+        "following_count",
+        "repos_count",
+        "gists_count",
         "company",
         "masked_phone",
         "masked_email",
         "interests",
         "bio_links",
+        "linked_usernames",
     }
 )
+
+# Claves internas: útiles para el grafo de identidad (`correlation.py`) y la
+# reducción de ruido, pero nunca se persisten ni se devuelven a la app — su
+# versión "filtrada" es la arista del grafo, no el dato crudo.
+_INTERNAL_ONLY_DETAIL_KEYS: Final[frozenset[str]] = frozenset({"linked_usernames"})
+
+# Lo único que sale del sistema (persistencia y respuesta HTTP). Ver
+# `repository.py::replace_findings`, el único punto donde se aplica.
+PUBLIC_DETAIL_KEYS: Final[frozenset[str]] = DETAIL_KEYS - _INTERNAL_ONLY_DETAIL_KEYS
 
 MAX_CONFIDENCE: Final = 100
 CORROBORATION_BONUS: Final = 10
@@ -73,9 +89,14 @@ def strongest_status(a: str, b: str) -> str:
 
 
 def clean_details(raw: Mapping[str, object]) -> dict[str, object]:
-    """Filtra `details` a la allowlist y descarta valores vacíos."""
+    """Filtra `details` a la allowlist interna y descarta valores vacíos."""
     return {
         key: value
         for key, value in raw.items()
         if key in DETAIL_KEYS and value not in (None, "", [], {})
     }
+
+
+def project_public_details(details: Mapping[str, object]) -> dict[str, object]:
+    """Recorta `details` a lo que puede salir del sistema (BD y respuesta HTTP)."""
+    return {key: value for key, value in details.items() if key in PUBLIC_DETAIL_KEYS}

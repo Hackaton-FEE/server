@@ -22,6 +22,7 @@ from fee_server.domain.osint.schemas import (
     TARGET_TYPES,
     CorrelationModel,
     DashboardResult,
+    EngineStatusModel,
     ScanRequest,
     ScanStatusResponse,
 )
@@ -119,7 +120,7 @@ class ScanService:
         return scan
 
     def build_status(self, scan: OsintScan) -> ScanStatusResponse:
-        engines = scan.engines or {}
+        engines = self._engine_states(scan)
         completed = [name for name, state in engines.items() if state.get("finished_at")]
         running = (
             [
@@ -137,7 +138,23 @@ class ScanService:
             completed_engines=completed,
             running_engines=running,
             partial_findings_count=len(repository.list_findings(self._session, scan.id)),
+            engines=engines,
+            error_category=self._scan_error(scan),
         )
+
+    @staticmethod
+    def _engine_states(scan: OsintScan) -> dict[str, dict]:
+        # Older failed scans store a top-level error_category string here.
+        return {
+            name: state
+            for name, state in (scan.engines or {}).items()
+            if isinstance(state, dict) and isinstance(state.get("status"), str)
+        }
+
+    @staticmethod
+    def _scan_error(scan: OsintScan) -> str | None:
+        value = (scan.engines or {}).get("error_category")
+        return value if isinstance(value, str) else None
 
     def build_results(self, scan: OsintScan) -> DashboardResult:
         if scan.status == "QUEUED":
@@ -157,19 +174,40 @@ class ScanService:
             )
             for row in rows
         ]
-        engines_run = [
-            name for name, state in (scan.engines or {}).items() if state.get("finished_at")
-        ]
+        engines = self._engine_states(scan)
+        engines_run = [name for name, state in engines.items() if state.get("finished_at")]
         correlation = (
             CorrelationModel.model_validate(scan.correlation) if scan.correlation else None
         )
-        return build_dashboard(
+        dashboard = build_dashboard(
             scan_id=scan.id,
             findings=findings,
             engines_run=engines_run,
             score=scan.exposure_score or 0,
             partial=scan.status not in _TERMINAL,
             correlation=correlation,
+        )
+        statuses = [state["status"] for state in engines.values()]
+        if scan.status == "FAILED" or (
+            statuses and all(s in {"error", "skipped"} for s in statuses)
+        ):
+            coverage = "none"
+        elif scan.status not in _TERMINAL or any(s in {"error", "degraded"} for s in statuses):
+            coverage = "partial"
+        elif statuses:
+            coverage = "complete"
+        else:
+            coverage = "unknown"
+        return dashboard.model_copy(
+            update={
+                "scan_status": scan.status,
+                "coverage": coverage,
+                "engines": {
+                    name: EngineStatusModel.model_validate(state) for name, state in engines.items()
+                },
+                "error_category": self._scan_error(scan),
+                "partial": dashboard.partial or coverage in {"none", "partial"},
+            }
         )
 
     # --- borrado y limpieza --------------------------------------------

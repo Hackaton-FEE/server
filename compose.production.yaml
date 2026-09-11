@@ -18,8 +18,11 @@ x-api-environment: &api-environment
   # Estático a propósito para el hackathon (ADR-OSINT-05); vacío = falla cerrado.
   # La app rechaza arrancar en producción si no está vacío.
   FEE_VERIFICATION_STATIC_CODE: ${FEE_VERIFICATION_STATIC_CODE:-}
-  FEE_ASSISTANT_MODE: ${FEE_ASSISTANT_MODE:-fake}
+  FEE_ASSISTANT_MODE: ${FEE_ASSISTANT_MODE:-disabled}
   FEE_ASSISTANT_API_KEY: ${FEE_ASSISTANT_API_KEY:-}
+  FEE_ASSISTANT_BASE_URL: ${FEE_ASSISTANT_BASE_URL:-https://integrate.api.nvidia.com/v1}
+  FEE_ASSISTANT_MODEL: ${FEE_ASSISTANT_MODEL:-meta/muse-glimmer-30b}
+  FEE_OSINT_MAX_PIVOT_CANDIDATES: ${FEE_OSINT_MAX_PIVOT_CANDIDATES:-3}
 
 x-logging: &logging
   driver: local
