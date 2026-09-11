@@ -11,6 +11,8 @@ x-api-environment: &api-environment
   FEE_IOS_APP_IDS: ${FEE_IOS_APP_IDS:-[]}
   FEE_OSINT_ENGINE_MODE: ${FEE_OSINT_ENGINE_MODE:-real}
   FEE_OSINT_PROXY_URL: ${FEE_OSINT_PROXY_URL:-}
+  FEE_OSINT_RESIDENTIAL_PROXY_URL: ${FEE_OSINT_RESIDENTIAL_PROXY_URL:-}
+  FEE_OSINT_NORMAL_PROXY_URL: ${FEE_OSINT_NORMAL_PROXY_URL:-}
   FEE_CORS_ORIGINS: ${FEE_CORS_ORIGINS:-[]}
   # Sin esto la app no arranca en producción (ver Settings._production_requires_rate_limiting):
   # sin límite por IP, /verification/email/confirm y /assistant/chat quedan sin cuota.

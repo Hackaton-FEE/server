@@ -1,22 +1,33 @@
 # Proxy residencial Decodo
 
-`FEE_OSINT_PROXY_URL` se configura únicamente en `.env.production` (modo 0600),
-nunca en Flutter, Git, argumentos de diagnóstico ni capturas. Compose la pasa a
-la API. El transporte común comprobado para los cuatro motores es un proxy
-`http://` con puerto explícito; los destinos HTTPS usan CONNECT y conservan TLS.
-Una URL no soportada impide arrancar, para evitar salida directa accidental.
+`FEE_OSINT_RESIDENTIAL_PROXY_URL` (o `FEE_OSINT_PROXY_URL` por retrocompatibilidad)
+se configura únicamente en `.env.production` (modo 0600), nunca en Flutter, Git,
+argumentos de diagnóstico ni capturas. Compose la pasa a la API. El transporte
+común comprobado para los motores es un proxy `http://` con puerto explícito; los
+destinos HTTPS usan CONNECT y conservan TLS. Una URL no soportada impide arrancar,
+para evitar configuraciones erróneas.
+
+### Asignación diferenciada y economía de cuota
+
+Para no agotar la cuota del proxy residencial:
+- **Holehe e Ignorant (account-recovery):** Usan el proxy residencial (`FEE_OSINT_RESIDENTIAL_PROXY_URL`
+  o `FEE_OSINT_PROXY_URL`). Consultan endpoints de restablecimiento de contraseña en
+  servicios que bloquean activamente IPs de centros de datos. Su consumo es mínimo
+  (< 2 MB por escaneo).
+- **Blackbird y Maigret (búsqueda de usernames):** Usan `FEE_OSINT_NORMAL_PROXY_URL`
+  o salida directa (conexión normal del servidor) si dicha variable está vacía.
+  Consultan perfiles públicos abiertos, ahorrando más del 95% del tráfico residencial.
 
 Ejemplo ficticio: `http://USUARIO:CLAVE@gate.decodo.com:7000`. Codifica los caracteres
 especiales del usuario y contraseña como componentes URL. El puerto 7000 rota
 por solicitud; 10001 mantiene una sesión sticky. Véanse [puertos](https://help.decodo.com/docs/residential-proxy-endpoints-and-ports)
 y [sesiones](https://help.decodo.com/docs/residential-proxy-session-types).
 
-Blackbird recibe `--proxy`. Holehe e Ignorant usan HTTPX y las variables
-`HTTP_PROXY`/`HTTPS_PROXY`. Maigret 0.6.5 usa su cliente con `trust_env=True`;
-no debe recibir además `--proxy`, porque su ProxyConnector intentaría atravesar
-el mismo proxy dos veces. Los subprocesos reciben un entorno acotado sin
-heredar `NO_PROXY` ni credenciales del servidor. La configuración oculta la URL
-en representaciones y errores de validación.
+Blackbird recibe `--proxy` si hay proxy normal configurado. Holehe e Ignorant usan HTTPX
+y las variables `HTTP_PROXY`/`HTTPS_PROXY` con el proxy residencial. Maigret 0.6.5 usa su
+cliente con `trust_env=True` sobre el proxy normal; no debe recibir además `--proxy`.
+Los subprocesos reciben un entorno acotado sin heredar `NO_PROXY` ni credenciales del servidor.
+La configuración oculta las URLs en representaciones y errores de validación.
 
 Un proxy operativo no garantiza acceso a todas las fuentes ni evita límites o
 CAPTCHA. Decodo requiere plan pagado y verificación de identidad para ciertos

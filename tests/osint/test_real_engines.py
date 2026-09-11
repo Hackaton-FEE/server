@@ -96,16 +96,31 @@ def test_maigret_engine_parses_the_generated_report(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "engine, tool, executables, engine_request, cli_proxy",
+    "engine, tool, executables, engine_request, cli_proxy, expected_proxy",
     [
-        (real.BlackbirdEngine, "blackbird", ("python",), EngineRequest(usernames=("alias",)), True),
-        (real.MaigretEngine, "maigret", ("maigret",), EngineRequest(usernames=("alias",)), False),
+        (
+            real.BlackbirdEngine,
+            "blackbird",
+            ("python",),
+            EngineRequest(usernames=("alias",)),
+            True,
+            "http://norm-user:norm-pass@datacenter.example:8080",
+        ),
+        (
+            real.MaigretEngine,
+            "maigret",
+            ("maigret",),
+            EngineRequest(usernames=("alias",)),
+            False,
+            "http://norm-user:norm-pass@datacenter.example:8080",
+        ),
         (
             real.HoleheEngine,
             "holehe",
             ("holehe",),
             EngineRequest(usernames=(), email="persona@example.com"),
             False,
+            "http://res-user:res-pass@residential.example:7000",
         ),
         (
             real.IgnorantEngine,
@@ -113,15 +128,21 @@ def test_maigret_engine_parses_the_generated_report(tmp_path, monkeypatch):
             ("ignorant",),
             EngineRequest(usernames=(), phone="+34611223344"),
             False,
+            "http://res-user:res-pass@residential.example:7000",
         ),
     ],
 )
 def test_engines_use_the_supported_proxy_transport(
-    tmp_path, monkeypatch, engine, tool, executables, engine_request, cli_proxy
+    tmp_path, monkeypatch, engine, tool, executables, engine_request, cli_proxy, expected_proxy
 ):
     _install_stub_tool(tmp_path, tool, *executables)
-    proxy = "http://example-user:example-password@proxy.example:7000"
-    settings = Settings(osint_vendor_dir=str(tmp_path), osint_proxy_url=proxy)
+    res_proxy = "http://res-user:res-pass@residential.example:7000"
+    norm_proxy = "http://norm-user:norm-pass@datacenter.example:8080"
+    settings = Settings(
+        osint_vendor_dir=str(tmp_path),
+        osint_residential_proxy_url=res_proxy,
+        osint_normal_proxy_url=norm_proxy,
+    )
     calls = []
 
     def fake_run_tool(argv, **kwargs):
@@ -133,13 +154,46 @@ def test_engines_use_the_supported_proxy_transport(
 
     assert len(calls) == 1
     argv, kwargs = calls[0]
-    assert kwargs["proxy_url"] == proxy
+    assert kwargs["proxy_url"] == expected_proxy
     assert ("--proxy" in argv) is cli_proxy
     # Maigret no debe combinar su ProxyConnector con el proxy de trust_env.
     if cli_proxy:
-        assert argv[argv.index("--proxy") + 1] == proxy
+        assert argv[argv.index("--proxy") + 1] == expected_proxy
     else:
-        assert proxy not in argv
+        assert expected_proxy not in argv
+
+
+def test_engines_default_direct_egress_for_usernames_with_legacy_proxy(tmp_path, monkeypatch):
+    _install_stub_tool(tmp_path, "blackbird", "python")
+    _install_stub_tool(tmp_path, "maigret", "maigret")
+    _install_stub_tool(tmp_path, "holehe", "holehe")
+    _install_stub_tool(tmp_path, "ignorant", "ignorant")
+
+    legacy_proxy = "http://legacy-user:legacy-pass@proxy.example:7000"
+    settings = Settings(osint_vendor_dir=str(tmp_path), osint_proxy_url=legacy_proxy)
+    calls = []
+
+    def fake_run_tool(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return ToolRun(1, "", "", timed_out=False, truncated=False)
+
+    monkeypatch.setattr(real, "run_tool", fake_run_tool)
+
+    # Blackbird y Maigret usan salida directa (proxy_url="")
+    real.BlackbirdEngine(settings).run(EngineRequest(usernames=("alias",)))
+    assert calls[-1][1]["proxy_url"] == ""
+    assert "--proxy" not in calls[-1][0]
+
+    real.MaigretEngine(settings).run(EngineRequest(usernames=("alias",)))
+    assert calls[-1][1]["proxy_url"] == ""
+    assert "--proxy" not in calls[-1][0]
+
+    # Holehe e Ignorant usan el proxy residencial efectivo (fallback a osint_proxy_url)
+    real.HoleheEngine(settings).run(EngineRequest(usernames=(), email="persona@example.com"))
+    assert calls[-1][1]["proxy_url"] == legacy_proxy
+
+    real.IgnorantEngine(settings).run(EngineRequest(usernames=(), phone="+34611223344"))
+    assert calls[-1][1]["proxy_url"] == legacy_proxy
 
 
 def test_holehe_engine_parses_the_generated_csv(tmp_path, monkeypatch):

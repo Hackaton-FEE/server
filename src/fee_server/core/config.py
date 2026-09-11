@@ -3,7 +3,7 @@
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import Field, SecretStr, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Valor obvio e inseguro: sirve para desarrollo local sin configurar nada.
@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     osint_engine_timeout_seconds: int = 120
     osint_max_output_bytes: int = 5_000_000
     osint_proxy_url: SecretStr = SecretStr("")
+    osint_residential_proxy_url: SecretStr = SecretStr("")
+    osint_normal_proxy_url: SecretStr = SecretStr("")
     # Raíz de las herramientas vendorizadas, cada una con su `.venv`.
     # La prepara `vendor/osint/setup.sh`.
     osint_vendor_dir: str = "vendor/osint"
@@ -102,13 +104,25 @@ class Settings(BaseSettings):
         # El entorno de pruebas nunca llama al proveedor real.
         return self.assistant_mode == "real" and self.environment != "test"
 
-    @field_validator("osint_proxy_url")
+    @property
+    def effective_osint_residential_proxy(self) -> str:
+        residential = self.osint_residential_proxy_url.get_secret_value()
+        if residential:
+            return residential
+        return self.osint_proxy_url.get_secret_value()
+
+    @property
+    def effective_osint_normal_proxy(self) -> str:
+        return self.osint_normal_proxy_url.get_secret_value()
+
+    @field_validator("osint_proxy_url", "osint_residential_proxy_url", "osint_normal_proxy_url")
     @classmethod
-    def _valid_osint_proxy(cls, value: SecretStr) -> SecretStr:
+    def _valid_osint_proxy(cls, value: SecretStr, info: ValidationInfo) -> SecretStr:
         raw = value.get_secret_value()
         if not raw:
             return value
-        message = "FEE_OSINT_PROXY_URL debe ser http://[usuario:password@]host:puerto"
+        field_label = f"FEE_{info.field_name.upper()}" if info.field_name else "FEE_OSINT_PROXY_URL"
+        message = f"{field_label} debe ser http://[usuario:password@]host:puerto"
         try:
             parsed = urlsplit(raw)
             valid = (

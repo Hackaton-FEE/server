@@ -171,3 +171,27 @@ def test_proxy_can_be_disabled_or_use_ip_allowlisting():
     assert Settings(osint_proxy_url="").osint_proxy_url.get_secret_value() == ""
     proxy = "http://proxy.example:7000"
     assert Settings(osint_proxy_url=proxy).osint_proxy_url.get_secret_value() == proxy
+
+
+def test_differentiated_proxies_fallback_and_effective_values(monkeypatch):
+    legacy = "http://legacy-user:legacy-pass@proxy.example:7000"
+    res = "http://res-user:res-pass@residential.example:7000"
+    norm = "http://norm-user:norm-pass@datacenter.example:8080"
+
+    # Caso 1: Solo legacy
+    monkeypatch.setenv("FEE_OSINT_PROXY_URL", legacy)
+    monkeypatch.delenv("FEE_OSINT_RESIDENTIAL_PROXY_URL", raising=False)
+    monkeypatch.delenv("FEE_OSINT_NORMAL_PROXY_URL", raising=False)
+    s1 = Settings()
+    assert s1.effective_osint_residential_proxy == legacy
+    assert s1.effective_osint_normal_proxy == ""
+
+    # Caso 2: Residencial explícito tiene prioridad sobre legacy
+    monkeypatch.setenv("FEE_OSINT_RESIDENTIAL_PROXY_URL", res)
+    monkeypatch.setenv("FEE_OSINT_NORMAL_PROXY_URL", norm)
+    s2 = Settings()
+    assert s2.effective_osint_residential_proxy == res
+    assert s2.effective_osint_normal_proxy == norm
+    assert "res-pass" not in repr(s2)
+    assert "norm-pass" not in repr(s2)
+

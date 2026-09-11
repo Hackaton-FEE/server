@@ -76,8 +76,16 @@ class _RealEngine:
         return self._settings.osint_max_output_bytes
 
     @property
+    def _residential_proxy(self) -> str:
+        return self._settings.effective_osint_residential_proxy
+
+    @property
+    def _normal_proxy(self) -> str:
+        return self._settings.effective_osint_normal_proxy
+
+    @property
     def _proxy(self) -> str:
-        return self._settings.osint_proxy_url.get_secret_value()
+        return self._residential_proxy
 
     def _require(self, path: Path) -> Path:
         if not path.exists():
@@ -142,14 +150,14 @@ class BlackbirdEngine(_RealEngine):
                 "--max-concurrent-requests",
                 _BLACKBIRD_CONCURRENCY,
             ]
-            if self._proxy:
-                argv += ["--proxy", self._proxy]
+            if self._normal_proxy:
+                argv += ["--proxy", self._normal_proxy]
 
             run_tool(
                 argv,
                 timeout=self._timeout,
                 max_output_bytes=self._max_bytes,
-                proxy_url=self._proxy,
+                proxy_url=self._normal_proxy,
                 cwd=str(root),
             )
             report = _newest(str(results_dir), "*_blackbird.json")
@@ -191,6 +199,8 @@ class MaigretEngine(_RealEngine):
                 ]
                 if database.exists():
                     argv += ["--db", str(database)]
+                else:
+                    argv += ["--top-sites", "500"]
                 # Maigret 0.6.5 combina ProxyConnector(--proxy) con
                 # ClientSession(trust_env=True): usar ambos conecta el proxy
                 # contra sí mismo. El entorno cubre también sus activadores y
@@ -200,7 +210,7 @@ class MaigretEngine(_RealEngine):
                     argv,
                     timeout=self._timeout * _MAIGRET_BUDGET_FACTOR,
                     max_output_bytes=self._max_bytes,
-                    proxy_url=self._proxy,
+                    proxy_url=self._normal_proxy,
                     cwd=work,
                 )
                 report = _newest(work, "report_*_simple.json")
@@ -236,7 +246,7 @@ class HoleheEngine(_RealEngine):
                 argv,
                 timeout=self._timeout,
                 max_output_bytes=self._max_bytes,
-                proxy_url=self._proxy,
+                proxy_url=self._residential_proxy,
                 cwd=work,
             )
             report = _newest(work, "holehe_*_results.csv")
@@ -284,7 +294,7 @@ class IgnorantEngine(_RealEngine):
                 argv,
                 timeout=self._timeout,
                 max_output_bytes=self._max_bytes,
-                proxy_url=self._proxy,
+                proxy_url=self._residential_proxy,
                 cwd=work,
             )
 
