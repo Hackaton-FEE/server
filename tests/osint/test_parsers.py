@@ -78,11 +78,38 @@ def test_maigret_simple_report_yields_confirmed_findings_with_ids():
     assert github.details["full_name"] == "Linus Torvalds"
     assert github.details["location"] == "Portland, OR"
     assert github.details["followers"] == 321694
+    assert github.details["following_count"] == 0
+    assert github.details["repos_count"] == 12
+    assert github.details["gists_count"] == 1
 
     # El segundo sitio no trae ids -> confianza menor y sufijo de fuente limpio.
     gist = findings["GitHubGist"]
     assert gist.confidence == 85
     assert gist.details == {}
+
+
+def test_maigret_extracts_pivoting_hints_from_ids_links_and_usernames():
+    payload = json.dumps(
+        {
+            "SomeSite": {
+                "ids_links": ["https://twitter.com/x", "https://twitter.com/x", ""],
+                "ids_usernames": {"twitter": "x_handle", "empty": ""},
+                "status": {
+                    "status": "Claimed",
+                    "site_name": "SomeSite",
+                    "url": "https://s/x",
+                    "ids": {},
+                    "username": "x",
+                    "tags": ["social"],
+                },
+            }
+        }
+    )
+
+    finding = parse_maigret_simple_json(payload)[0]
+
+    assert finding.details["bio_links"] == ["https://twitter.com/x"]
+    assert finding.details["linked_usernames"] == ["x_handle"]
 
 
 def test_maigret_similar_match_is_a_potential_match():
@@ -124,10 +151,12 @@ def test_holehe_confirmed_rows_extract_masked_contacts():
 
     assert findings["imgur"].status == CONFIRMED
     assert findings["imgur"].confidence == 75
+    assert findings["imgur"].url == "https://imgur.com"
     assert findings["lastpass"].details["masked_email"] == "jo****@gmail.com"
     assert findings["twitter"].details["masked_phone"] == "+1********89"
     assert "caringbridge" not in findings  # exists == False
     assert findings["spotify"].status == RATE_LIMITED
+    assert findings["spotify"].url is None
 
 
 # --- Ignorant --------------------------------------------------------

@@ -3,7 +3,7 @@
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import SecretStr, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Valor obvio e inseguro: sirve para desarrollo local sin configurar nada.
@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     # Raíz de las herramientas vendorizadas, cada una con su `.venv`.
     # La prepara `vendor/osint/setup.sh`.
     osint_vendor_dir: str = "vendor/osint"
+    # Tope de alias nuevos por escaneo en la segunda pasada de pivoteo (§8).
+    # Profundidad fija en 1: los hallazgos de esa segunda pasada nunca vuelven
+    # a extraer candidatos.
+    osint_max_pivot_candidates: int = Field(default=3, ge=0, le=10)
 
     # --- Verificación de correo (consentimiento para escanear a terceros) ---
     # Código estático para el hackathon: mientras no esté vacío, `confirm` acepta
@@ -75,7 +79,7 @@ class Settings(BaseSettings):
     # --- Asistente de higiene de privacidad (LLM) ---
     # `fake`: respuesta determinista sin red; `real`: proveedor compatible con
     # la API de OpenAI (NVIDIA por defecto). Ver `domain/assistant/`.
-    assistant_mode: Literal["fake", "real"] = "fake"
+    assistant_mode: Literal["disabled", "fake", "real"] = "fake"
     assistant_api_key: SecretStr = SecretStr("")
     assistant_base_url: str = "https://integrate.api.nvidia.com/v1"
     assistant_model: str = "meta/muse-glimmer-30b"

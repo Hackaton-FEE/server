@@ -1,7 +1,7 @@
 """Validación de la conversación y construcción de los mensajes a enviar."""
 
 from fee_server.core.config import Settings
-from fee_server.core.problem import InvalidConversationError
+from fee_server.core.problem import AssistantUnavailableError, InvalidConversationError
 from fee_server.domain.assistant.prompts import SYSTEM_PROMPT
 from fee_server.domain.assistant.schemas import ChatRequest
 
@@ -11,6 +11,11 @@ class AssistantService:
         self._settings = settings
 
     def validate(self, request: ChatRequest) -> None:
+        if self._settings.assistant_mode == "disabled" or (
+            self._settings.environment == "production"
+            and not self._settings.assistant_uses_real_gateway
+        ):
+            raise AssistantUnavailableError()
         if len(request.messages) > self._settings.assistant_max_messages:
             raise InvalidConversationError()
         if request.messages[-1].role != "user":

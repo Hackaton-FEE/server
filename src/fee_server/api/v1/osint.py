@@ -27,7 +27,9 @@ from fee_server.domain.osint.schemas import (
 
 router = APIRouter(prefix="/osint", tags=["osint"])
 
-_ESTIMATED_DURATION_SECONDS = 90
+# Estimación, no garantía: incluye margen para una posible segunda pasada de
+# pivoteo (domain/osint/runner.py).
+_ESTIMATED_DURATION_SECONDS = 150
 _SSE_POLL_SECONDS = 1.0
 _SSE_MAX_POLLS = 300  # ~5 min de vida máxima del stream
 

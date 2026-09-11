@@ -1,8 +1,62 @@
 """Contrato HTTP del módulo OSINT con motores simulados (sin red)."""
 
+import json
+
+from fee_server.domain.osint import runner
+from fee_server.domain.osint.engines import ENGINE_ERROR, ENGINE_OK, EngineResult
+from fee_server.domain.osint.findings import CONFIRMED, Finding
 from tests.osint.conftest import VALID_USERNAME_SCAN
 
 SCANS = "/api/v1/osint/scans"
+
+
+def test_failed_scan_remains_readable_without_claiming_complete_coverage(
+    client, headers, monkeypatch
+):
+    def unavailable(_settings):
+        raise RuntimeError("engines unavailable")
+
+    monkeypatch.setattr(runner, "build_engines", unavailable)
+    scan_id = _start(client, headers).json()["scan_id"]
+    response = client.get(f"{SCANS}/{scan_id}", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["status"] == "FAILED"
+    assert response.json()["error_category"] == "engines-unavailable"
+    dashboard = client.get(f"{SCANS}/{scan_id}/results", headers=headers)
+    assert dashboard.status_code == 200
+    assert dashboard.json()["coverage"] == "none"
+    assert dashboard.json()["partial"] is True
+
+
+def test_name_without_supported_inputs_reports_no_coverage(client, headers):
+    scan_id = _start(client, headers, target_type="name", identifier="Persona Ejemplo").json()[
+        "scan_id"
+    ]
+    body = client.get(f"{SCANS}/{scan_id}/results", headers=headers).json()
+    assert body["coverage"] == "none"
+    assert body["partial"] is True
+    assert all(engine["status"] == "skipped" for engine in body["engines"].values())
+
+
+def test_successful_pivot_does_not_hide_an_earlier_engine_failure(client, headers, monkeypatch):
+    class RecoveringEngine:
+        name = "blackbird"
+
+        def run(self, request):
+            if "pivot_target_99" in request.usernames:
+                return EngineResult(self.name, ENGINE_OK, ())
+            return EngineResult(self.name, ENGINE_ERROR, (), "timeout")
+
+    monkeypatch.setattr(
+        runner, "build_engines", lambda _s: (_DiscoveryEngine(), RecoveringEngine())
+    )
+    scan_id = _start(client, headers).json()["scan_id"]
+    body = client.get(f"{SCANS}/{scan_id}/results", headers=headers).json()
+    assert body["coverage"] == "partial"
+    assert body["partial"] is True
+    assert body["engines"]["blackbird"]["status"] == "error"
+    assert body["engines"]["blackbird"]["runs"] == 2
+    assert body["engines"]["blackbird"]["error_category"] == "timeout"
 
 
 def _start(client, headers, **overrides):
@@ -43,6 +97,97 @@ def test_full_scan_flow_reaches_a_dashboard(client, headers):
     assert correlation is not None
     assert correlation["identity_graph"]["nodes"]
     assert correlation["timeline"]["oldest_platform"] == "GitHub"
+
+
+class _DiscoveryEngine:
+    """Fase 1: encuentra el alias original y descubre uno relacionado."""
+
+    name = "maigret"
+
+    def run(self, request):
+        if "alias_de_prueba" not in request.usernames:
+            return EngineResult(self.name, ENGINE_OK, ())
+        finding = Finding(
+            "GitHub",
+            "coding",
+            None,
+            "alias_de_prueba",
+            CONFIRMED,
+            90,
+            ("maigret",),
+            {"full_name": "Ada Lovelace", "linked_usernames": ["pivot_target_99"]},
+        )
+        return EngineResult(self.name, ENGINE_OK, (finding,))
+
+
+class _PivotAwareEngine:
+    """Solo encuentra algo cuando se le consulta el alias pivotado (Fase 2)."""
+
+    name = "blackbird"
+
+    def run(self, request):
+        if "pivot_target_99" not in request.usernames:
+            return EngineResult(self.name, ENGINE_OK, ())
+        finding = Finding(
+            "GitLab", "coding", None, "pivot_target_99", CONFIRMED, 80, ("blackbird",), {}
+        )
+        return EngineResult(self.name, ENGINE_OK, (finding,))
+
+
+def test_pivoted_findings_reach_results_without_leaking_linked_usernames(
+    client, headers, monkeypatch
+):
+    monkeypatch.setattr(
+        runner, "build_engines", lambda _s: (_DiscoveryEngine(), _PivotAwareEngine())
+    )
+
+    scan_id = _start(client, headers).json()["scan_id"]
+    dashboard = client.get(f"{SCANS}/{scan_id}/results", headers=headers).json()
+
+    items = [item for cat in dashboard["categories"] for item in cat["items"]]
+    platforms = {item["platform"] for item in items}
+    assert "GitLab" in platforms  # el hallazgo pivotado llegó al dashboard
+
+    # `linked_usernames` es interno: puede aparecer como *nombre* de evidencia
+    # en la arista del grafo (documentado, esperado), pero nunca como campo
+    # crudo dentro de ningún `details` de hallazgo.
+    assert all("linked_usernames" not in item["details"] for item in items)
+
+    edges = dashboard["correlation"]["identity_graph"]["edges"]
+    assert any(edge["shared"] == ["linked_usernames"] for edge in edges)
+
+
+class _LinkedUsernamesEngine:
+    """Simula un motor que descubre `linked_usernames` (dato interno)."""
+
+    name = "maigret"
+
+    def run(self, request):
+        finding = Finding(
+            "GitHub",
+            "coding",
+            None,
+            "alias_de_prueba",
+            CONFIRMED,
+            90,
+            ("maigret",),
+            {"full_name": "Ada Lovelace", "linked_usernames": ["otra_cuenta"]},
+        )
+        return EngineResult(self.name, ENGINE_OK, (finding,))
+
+
+def test_internal_only_details_never_reach_the_api_response(client, headers, monkeypatch):
+    monkeypatch.setattr(runner, "build_engines", lambda _s: (_LinkedUsernamesEngine(),))
+
+    scan_id = _start(client, headers).json()["scan_id"]
+    dashboard = client.get(f"{SCANS}/{scan_id}/results", headers=headers).json()
+
+    # `linked_usernames` alimentó el grafo de identidad, pero nunca debe
+    # aparecer como campo crudo en ningún `details` de la respuesta.
+    assert "linked_usernames" not in json.dumps(dashboard)
+    items = [item for cat in dashboard["categories"] for item in cat["items"]]
+    github = next(item for item in items if item["platform"] == "GitHub")
+    assert github["details"]["full_name"] == "Ada Lovelace"
 
 
 def test_github_is_merged_across_engines(client, headers):

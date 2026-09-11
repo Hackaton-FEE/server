@@ -26,7 +26,7 @@ def test_apple_file_lists_configured_app_ids(tmp_path):
         jwt_secret="test-secret-test-secret-test-secret-0123",
         ios_app_ids=("ABCDE12345.io.fee.app",),
         android_package_name="io.fee.app",
-        android_sha256_fingerprints=("AA:BB:CC",),
+        android_sha256_fingerprints=("AA:BB:CC", "DD:EE:FF"),
     )
     app = create_app(settings)
     Base.metadata.create_all(get_engine())
@@ -37,3 +37,8 @@ def test_apple_file_lists_configured_app_ids(tmp_path):
 
     assert apple == {"webcredentials": {"apps": ["ABCDE12345.io.fee.app"]}}
     assert android[0]["target"]["package_name"] == "io.fee.app"
+    assert android[0]["target"]["sha256_cert_fingerprints"] == ["AA:BB:CC", "DD:EE:FF"]
+    assert set(android[0]["relation"]) == {
+        "delegate_permission/common.handle_all_urls",
+        "delegate_permission/common.get_login_creds",
+    }
