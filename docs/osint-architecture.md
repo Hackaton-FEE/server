@@ -900,3 +900,14 @@ Cada fase es un PR pequeño hacia `main` con aceptación observable.
 - SSE es opcional para el cliente; el polling de §5.2 es suficiente para un MVP.
 - Un `202` **no** implica que las plataformas confirmaran nada: solo que el
   escaneo quedó encolado (misma disciplina que el resto del contrato).
+
+
+### Alias de plantilla en la expansión automática
+
+La segunda pasada descarta el literal `username` (sin distinguir mayúsculas)
+y los valores no textuales extraídos de `linked_usernames`. Son metadatos
+raspados, no identificadores aportados por el cliente; una plantilla no debe
+originar cientos de hallazgos de otra identidad. El alias `username` sigue
+siendo válido cuando la persona lo introduce expresamente en la petición.
+La corrección no modifica informes ya persistidos: es necesario un escaneo
+nuevo tras desplegarla para obtener un informe sin esa expansión.

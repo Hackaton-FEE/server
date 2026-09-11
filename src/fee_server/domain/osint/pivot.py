@@ -42,7 +42,14 @@ def extract_pivot_candidates(
         if not isinstance(linked, list):
             continue
         for raw in linked:
-            candidate = str(raw).strip()
+            # This is scraped metadata, not a client-supplied alias. Some
+            # extractors expose the literal template token as a linked handle.
+            # Never expand that token into a new, unrelated identity search.
+            if not isinstance(raw, str):
+                continue
+            candidate = raw.strip()
+            if candidate.casefold() == "username":
+                continue
             key = candidate.casefold()
             if not candidate or key in excluded or key in candidates:
                 continue

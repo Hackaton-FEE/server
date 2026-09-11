@@ -419,3 +419,59 @@ def test_concurrent_scan_limit_and_slot_release(monkeypatch):
         second.result(timeout=5)
     assert peak == 1
     assert runner._active_scans == 0
+
+
+class _TemplateLinkEngine:
+    name = "maigret"
+
+    def __init__(self):
+        self.requests = []
+
+    def run(self, request):
+        self.requests.append(request)
+        alias = request.usernames[0]
+        return EngineResult(
+            self.name,
+            ENGINE_OK,
+            (
+                Finding(
+                    "Site",
+                    "social",
+                    None,
+                    alias,
+                    CONFIRMED,
+                    90,
+                    ("maigret",),
+                    {"linked_usernames": ["username", "{username}"]},
+                ),
+            ),
+        )
+
+
+def test_template_link_does_not_launch_a_second_search_or_replace_requested_alias(
+    client, settings, monkeypatch
+):
+    scan_id = _make_scan(settings)
+    engine = _TemplateLinkEngine()
+    monkeypatch.setattr(runner, "build_engines", lambda _s: (engine,))
+    request = EngineRequest(
+        usernames=("client_alias",), email="client@example.com", phone="+12025550123"
+    )
+    runner.run_scan(scan_id=scan_id, engine_request=request, settings=settings)
+    assert engine.requests == [request]
+    with session_scope() as session:
+        scan = session.get(OsintScan, scan_id)
+        assert scan.status == "COMPLETED"
+        assert scan.engines["maigret"]["runs"] == 1
+        assert {node["username"] for node in scan.correlation["identity_graph"]["nodes"]} == {
+            "client_alias"
+        }
+
+
+def test_explicit_client_username_is_still_searched(client, settings, monkeypatch):
+    scan_id = _make_scan(settings)
+    engine = _TemplateLinkEngine()
+    monkeypatch.setattr(runner, "build_engines", lambda _s: (engine,))
+    request = EngineRequest(usernames=("username",))
+    runner.run_scan(scan_id=scan_id, engine_request=request, settings=settings)
+    assert engine.requests == [request]

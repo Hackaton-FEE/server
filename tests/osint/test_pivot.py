@@ -75,3 +75,12 @@ def test_non_confirmed_findings_are_ignored():
     ]
 
     assert extract_pivot_candidates(findings, already_queried=(), max_candidates=3) == ()
+
+
+def test_template_username_and_non_text_metadata_never_become_searches():
+    findings = [
+        _finding(linked=["username", " UserName ", "{username}", None, 123, "client_other"])
+    ]
+    assert extract_pivot_candidates(
+        findings, already_queried=("client_alias",), max_candidates=3
+    ) == ("client_other",)
