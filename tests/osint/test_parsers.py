@@ -93,7 +93,7 @@ def test_maigret_extracts_pivoting_hints_from_ids_links_and_usernames():
         {
             "SomeSite": {
                 "ids_links": ["https://twitter.com/x", "https://twitter.com/x", ""],
-                "ids_usernames": {"twitter": "x_handle", "empty": ""},
+                "ids_usernames": {"x_handle": "username", "123456": "gaia_id", "": "username"},
                 "status": {
                     "status": "Claimed",
                     "site_name": "SomeSite",
@@ -200,3 +200,69 @@ def test_ignorant_ignores_noise_and_deduplicates():
 
 def test_ignorant_empty_output_yields_nothing():
     assert parse_ignorant_output("") == []
+
+
+def test_maigret_preserves_the_account_username_of_each_service():
+    payload = {
+        "ServiceOne": {
+            "username": "client_seed",
+            "ids_usernames": {"external_link": "username"},
+            "status": {
+                "status": "Claimed",
+                "site_name": "ServiceOne",
+                "username": "client_seed",
+                "ids": {"username": "client_on_one"},
+            },
+        },
+        "ServiceTwo": {
+            "status": {
+                "status": "Claimed",
+                "site_name": "ServiceTwo",
+                "username": "client_seed",
+                "ids": {"username": "client_on_two"},
+            },
+        },
+    }
+    findings = parse_maigret_simple_json(json.dumps(payload), username="client_seed")
+    assert [(f.platform, f.username) for f in findings] == [
+        ("ServiceOne", "client_on_one"),
+        ("ServiceTwo", "client_on_two"),
+    ]
+    assert findings[0].details["linked_usernames"] == ["external_link"]
+
+
+def test_maigret_uses_report_username_before_search_fallback():
+    payload = {
+        "Service": {
+            "username": "reported_alias",
+            "status": {"status": "Claimed", "site_name": "Service", "ids": {}},
+        }
+    }
+    assert (
+        parse_maigret_simple_json(json.dumps(payload), username="seed")[0].username
+        == "reported_alias"
+    )
+
+
+def test_maigret_scraped_templates_do_not_replace_client_username():
+    payload = {
+        "Service": {
+            "username": "{username}",
+            "ids_usernames": {
+                "actual_link": "username",
+                "username": "username",
+                "{username}": "username",
+                "not_a_handle": "gaia_id",
+                "wrong_shape": {"type": "username"},
+            },
+            "status": {
+                "status": "Claimed",
+                "site_name": "Service",
+                "username": "username",
+                "ids": {"username": "{username}"},
+            },
+        }
+    }
+    finding = parse_maigret_simple_json(json.dumps(payload), username="client_seed")[0]
+    assert finding.username == "client_seed"
+    assert finding.details["linked_usernames"] == ["actual_link"]

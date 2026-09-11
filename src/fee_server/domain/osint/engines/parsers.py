@@ -10,6 +10,7 @@ import json
 import re
 from collections.abc import Mapping
 
+from fee_server.domain.osint.catalog import is_valid_identifier
 from fee_server.domain.osint.findings import (
     CONFIRMED,
     POTENTIAL_MATCH,
@@ -146,10 +147,21 @@ def _maigret_links(entry: Mapping[str, object]) -> dict[str, object]:
         if urls:
             details["bio_links"] = urls
 
+    # Maigret 0.6.5 devuelve {identificador: tipo}, NO {sitio: alias}.
+    # Los valores "username", "gaia_id", etc. describen el tipo de consulta.
+    # Solo las claves de tipo username pueden alimentar los motores de alias.
     usernames_map = entry.get("ids_usernames")
     if isinstance(usernames_map, dict):
         usernames = sorted(
-            {str(value).strip() for value in usernames_map.values() if str(value).strip()}
+            {
+                alias.strip()
+                for alias, id_type in usernames_map.items()
+                if id_type == "username"
+                and isinstance(alias, str)
+                and is_valid_identifier("username", alias.strip())
+                and alias.strip().casefold() != "username"
+            },
+            key=str.casefold,
         )
         if usernames:
             details["linked_usernames"] = usernames
@@ -161,6 +173,17 @@ def _first_tag(*tag_lists: object) -> str:
         if isinstance(tags, list) and tags:
             return str(tags[0])
     return "other"
+
+
+def _site_username(*values: object) -> str | None:
+    """Alias observado del servicio, sin tokens de plantilla ni conversiones de IDs."""
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        value = value.strip()
+        if value and value.casefold() != "username" and not any(c in value for c in "{}<>\r\n\t"):
+            return value
+    return None
 
 
 def parse_maigret_simple_json(text: str, *, username: str | None = None) -> list[Finding]:
@@ -190,7 +213,13 @@ def parse_maigret_simple_json(text: str, *, username: str | None = None) -> list
                 platform=_MAIGRET_SOURCE_SUFFIX.sub("", str(status.get("site_name") or "")).strip(),
                 category=_first_tag(status.get("tags"), site.get("tags")),
                 url=status.get("url") or entry.get("url_user"),
-                username=status.get("username") or username or entry.get("username"),
+                # ids.username describe la cuenta extraída en esta página.
+                # status/entry.username suelen repetir el alias consultado.
+                # Nunca tomar un alias de ids_usernames: puede ser de otra página.
+                username=_site_username(
+                    ids.get("username"), status.get("username"), entry.get("username")
+                )
+                or username,
                 status=state,
                 confidence=confidence,
                 sources=("maigret",),

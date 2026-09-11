@@ -911,3 +911,38 @@ originar cientos de hallazgos de otra identidad. El alias `username` sigue
 siendo válido cuando la persona lo introduce expresamente en la petición.
 La corrección no modifica informes ya persistidos: es necesario un escaneo
 nuevo tras desplegarla para obtener un informe sin esa expansión.
+
+### Corrección del mapeo de usernames por servicio (11 septiembre 2026)
+
+Maigret 0.6.5 serializa `ids_usernames` como **`{identificador: tipo}`**;
+por ejemplo, `{"client_other": "username", "123456": "gaia_id"}`. Su
+`checking.parse_usernames` escribe este formato y `extract_ids_from_results`
+lo consume de la misma forma. El mapeo incorporado a `main` en `d92af3e` lo leyó
+como `{servicio: alias}`: convirtió la etiqueta de tipo `username` en un
+candidato. `3cba811` bloqueó ese literal en el pivoteo, pero no recuperaba el
+identificador real. El adaptador ahora lee las **claves** de tipo `username` y
+conserva la validación y el límite de la segunda pasada.
+
+Para el hallazgo de cada página, `status.ids.username` (si el extractor lo
+proporciona) tiene prioridad sobre `status.username`/`entry.username`, que
+normalmente repiten la consulta. Los alias de otras páginas en `ids_usernames`
+no sustituyen al username de la página actual. La correlación y el dashboard
+persisten el mismo username del hallazgo. Cuando no hay alias extraído, se
+conserva el alias que el motor comprobó; Holehe e Ignorant siguen devolviendo
+`null` cuando solo conocen asociación con correo/teléfono. No se deduce un
+username del email, de la etiqueta de sesión ni de una URL arbitraria.
+
+La identidad de entrada sigue viniendo exclusivamente de `ScanRequest`:
+`identifier`, `associated_email` y `associated_usernames`. La cuenta autenticada
+aporta autorización y propiedad del escaneo. La prueba HTTP cruza una etiqueta
+de login, un alias inicial y dos usernames de servicio diferentes, y verifica
+el resultado almacenado y el grafo. Las coincidencias de alias no prueban por sí
+solas titularidad. Los informes ya persistidos no se reescriben sin una nueva
+consulta: no contienen toda la salida original necesaria para reconstruirlos.
+
+Si Blackbird conserva el alias inicial y Maigret extrae uno diferente para la
+misma cuenta, se deduplican cuando ambos hallazgos confirmados tienen la misma
+plataforma y URL exacta de perfil, y la ruta contiene un alias como segmento.
+Se conserva el username de Maigret. Las URLs raíz, genéricas o diferentes no
+se equiparan por inferencia; tampoco se unen los hallazgos de correo/teléfono
+sin username. La prueba HTTP verifica este caso junto con el pivoteo.

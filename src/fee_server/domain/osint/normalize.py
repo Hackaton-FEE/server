@@ -1,9 +1,11 @@
 """Normalización a esquema canónico y deduplicación entre motores."""
 
 from collections.abc import Iterable
+from urllib.parse import unquote, urlsplit
 
 from fee_server.domain.osint.catalog import canonical_category, canonical_platform
 from fee_server.domain.osint.findings import (
+    CONFIRMED,
     CORROBORATION_BONUS,
     CORROBORATION_CEILING,
     RATE_LIMITED,
@@ -55,6 +57,54 @@ def _combine(existing: Finding, incoming: Finding) -> Finding:
     )
 
 
+def _profile_url(finding: Finding) -> tuple[str, str] | None:
+    if finding.status != CONFIRMED or not finding.username or not finding.url:
+        return None
+    try:
+        parts = urlsplit(finding.url)
+        if (
+            parts.scheme not in {"http", "https"}
+            or not parts.netloc
+            or not parts.path.strip("/")
+            or parts.username
+            or parts.password
+        ):
+            return None
+    except ValueError:
+        return None
+    # Solo URLs idénticas: no deducir redirecciones ni equivalencia de rutas.
+    return finding.platform.casefold(), finding.url
+
+
+def _merge_same_profile_urls(findings: Iterable[Finding]) -> list[Finding]:
+    groups: dict[tuple[str, str], list[Finding]] = {}
+    result: list[Finding] = []
+    for finding in findings:
+        key = _profile_url(finding)
+        if key is None:
+            result.append(finding)
+        else:
+            groups.setdefault(key, []).append(finding)
+    for (_, url), accounts in groups.items():
+        segments = {
+            part.removeprefix("@").casefold() for part in unquote(urlsplit(url).path).split("/")
+        }
+        # Una ruta genérica no vincula dos alias. Exigir que la URL identifique
+        # explícitamente al menos uno de ellos, como /user/alias o /@alias.
+        if len(accounts) == 1 or not any(
+            account.username.casefold() in segments for account in accounts
+        ):
+            result.extend(accounts)
+            continue
+        preferred = max(accounts, key=_deepest_source)
+        combined = preferred
+        for account in accounts:
+            if account is not preferred:
+                combined = _combine(combined, account)
+        result.append(combined)
+    return result
+
+
 def merge_findings(findings: Iterable[Finding]) -> list[Finding]:
     """Fusiona hallazgos por (plataforma, username).
 
@@ -67,12 +117,13 @@ def merge_findings(findings: Iterable[Finding]) -> list[Finding]:
         key = _merge_key(finding)
         merged[key] = _combine(merged[key], finding) if key in merged else finding
 
+    profiles = _merge_same_profile_urls(merged.values())
     platforms_confirmed = {
-        finding.platform.casefold() for finding in merged.values() if finding.status != RATE_LIMITED
+        finding.platform.casefold() for finding in profiles if finding.status != RATE_LIMITED
     }
     result = [
         finding
-        for finding in merged.values()
+        for finding in profiles
         if finding.status != RATE_LIMITED or finding.platform.casefold() not in platforms_confirmed
     ]
     result.sort(key=lambda f: (-f.confidence, f.platform.casefold()))

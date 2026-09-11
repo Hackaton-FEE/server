@@ -384,3 +384,96 @@ def test_events_stream_emits_a_done_event(client, headers):
 
 def test_unknown_scan_returns_404(client, headers):
     assert client.get(f"{SCANS}/does-not-exist", headers=headers).status_code == 404
+
+
+def test_client_identity_maps_to_per_service_usernames_without_session_label(client, monkeypatch):
+    from fee_server.domain.osint.engines.parsers import parse_maigret_simple_json
+    from tests import passkey_helpers as pk
+
+    auth = pk.register(client, pk.new_device(), label="login_label").json()
+    headers = {"Authorization": f"Bearer {auth['access_token']}"}
+    requests = []
+
+    class MaigretReportEngine:
+        name = "maigret"
+
+        def run(self, request):
+            requests.append(request)
+            if request.usernames == ("client_seed",):
+                payload = {
+                    "Primary": {
+                        "username": "client_seed",
+                        "ids_usernames": {"client_page_two": "username", "1234": "gaia_id"},
+                        "status": {
+                            "status": "Claimed",
+                            "site_name": "Primary",
+                            "username": "client_seed",
+                            "url": "https://primary.example/client_page_one",
+                            "ids": {"username": "client_page_one", "fullname": "Client Example"},
+                        },
+                    }
+                }
+            else:
+                assert request.usernames == ("client_page_two",)
+                payload = {
+                    "Secondary": {
+                        "status": {
+                            "status": "Claimed",
+                            "site_name": "Secondary",
+                            "username": "client_page_two",
+                            "ids": {},
+                            "url": "https://secondary.example/client_page_two",
+                        },
+                    }
+                }
+            findings = parse_maigret_simple_json(json.dumps(payload), username=request.usernames[0])
+            return EngineResult(self.name, ENGINE_OK, tuple(findings))
+
+    class BlackbirdReportEngine:
+        name = "blackbird"
+
+        def run(self, request):
+            if request.usernames != ("client_seed",):
+                return EngineResult(self.name, ENGINE_OK, ())
+            return EngineResult(
+                self.name,
+                ENGINE_OK,
+                (
+                    Finding(
+                        "Primary",
+                        "other",
+                        "https://primary.example/client_page_one",
+                        "client_seed",
+                        CONFIRMED,
+                        80,
+                        (self.name,),
+                        {},
+                    ),
+                ),
+            )
+
+    monkeypatch.setattr(
+        runner, "build_engines", lambda _: (BlackbirdReportEngine(), MaigretReportEngine())
+    )
+    response = _start(
+        client,
+        headers,
+        target_type="phone",
+        identifier="+12025550123",
+        associated_email="client@example.com",
+        associated_usernames=["client_seed"],
+    )
+    assert response.status_code == 202
+    scan_id = response.json()["scan_id"]
+    result = client.get(f"{SCANS}/{scan_id}/results", headers=headers).json()
+    assert requests[0].usernames == ("client_seed",)
+    assert requests[0].email == "client@example.com"
+    assert requests[0].phone == "+12025550123"
+    assert requests[1].usernames == ("client_page_two",)
+    items = [item for category in result["categories"] for item in category["items"]]
+    expected = {("Primary", "client_page_one"), ("Secondary", "client_page_two")}
+    assert {(item["platform"], item["username"]) for item in items} == expected
+    assert {
+        (n["platform"], n["username"]) for n in result["correlation"]["identity_graph"]["nodes"]
+    } == expected
+    assert all("linked_usernames" not in item["details"] for item in items)

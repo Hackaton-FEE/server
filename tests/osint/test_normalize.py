@@ -1,5 +1,7 @@
 """Normalización y deduplicación entre motores."""
 
+import pytest
+
 from fee_server.domain.osint.findings import CONFIRMED, POTENTIAL_MATCH, RATE_LIMITED, Finding
 from fee_server.domain.osint.normalize import merge_findings, normalize
 
@@ -45,8 +47,9 @@ def test_merge_corroborated_finding_raises_confidence_and_unions_sources():
 
 
 def test_potential_match_does_not_merge_with_confirmed_other_username():
-    a = _finding(username="alice", status=CONFIRMED)
-    b = _finding(username="bob", status=POTENTIAL_MATCH, confidence=50)
+    url = "https://github.com/alice"
+    a = _finding(username="alice", url=url, status=CONFIRMED)
+    b = _finding(username="bob", url=url, status=POTENTIAL_MATCH, confidence=50)
 
     merged = merge_findings([a, b])
 
@@ -81,3 +84,88 @@ def test_results_are_sorted_by_confidence_desc():
     merged = merge_findings([low, high])
 
     assert [f.platform for f in merged] == ["GitHub", "Reddit"]
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("path", ["/client_seed", "/user/client_page", "/@client_page"])
+def test_same_profile_url_keeps_the_username_from_maigret(reverse, path):
+    url = f"https://example.invalid{path}"
+    blackbird = _finding(username="client_seed", url=url)
+    maigret = _finding(
+        username="client_page",
+        url=url,
+        sources=("maigret",),
+        confidence=95,
+        details={"account_id": "account-123"},
+    )
+    findings = [blackbird, maigret]
+    merged = merge_findings(list(reversed(findings)) if reverse else findings)
+
+    assert len(merged) == 1
+    assert merged[0].username == "client_page"
+    assert merged[0].url == url
+    assert merged[0].sources == ("blackbird", "maigret")
+    assert merged[0].details["account_id"] == "account-123"
+    assert merged[0].confidence == 98
+
+
+def test_different_profile_urls_do_not_merge_different_usernames():
+    findings = [
+        _finding(username="client_seed", url="https://example.invalid/client_seed"),
+        _finding(
+            username="client_page",
+            url="https://example.invalid/client_page",
+            sources=("maigret",),
+        ),
+    ]
+    assert len(merge_findings(findings)) == 2
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        None,
+        "",
+        "https://example.invalid",
+        "https://example.invalid/",
+        "https://example.invalid/?username=client_seed",
+        "https://example.invalid/login",
+        "https://example.invalid/users",
+        "https://example.invalid/client_seed_extra",
+        "ftp://example.invalid/client_seed",
+        "https://user:pass@example.invalid/client_seed",
+        "https://[invalid/client_seed",
+    ],
+)
+def test_generic_or_invalid_url_does_not_merge_different_usernames(url):
+    findings = [
+        _finding(username="client_seed", url=url),
+        _finding(username="client_page", url=url, sources=("maigret",)),
+    ]
+    assert len(merge_findings(findings)) == 2
+
+
+def test_same_profile_url_does_not_merge_different_platforms_or_contact_checks():
+    findings = [
+        _finding(username="client_seed", url="https://example.invalid/client_seed"),
+        _finding(
+            username="client_page",
+            url="https://example.invalid/client_seed",
+            platform="Other",
+            sources=("maigret",),
+        ),
+        _finding(username=None, url="https://example.invalid/client_seed", sources=("holehe",)),
+    ]
+    assert len(merge_findings(findings)) == 3
+
+
+def test_existing_username_key_still_merges_reports_with_different_urls():
+    findings = [
+        _finding(username="client_page", url="https://example.invalid/client_page"),
+        _finding(
+            username="client_page",
+            url="https://api.example.invalid/users/client_page",
+            sources=("maigret",),
+        ),
+    ]
+    assert len(merge_findings(findings)) == 1
