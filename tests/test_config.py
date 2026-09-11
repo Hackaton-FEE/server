@@ -195,3 +195,12 @@ def test_differentiated_proxies_fallback_and_effective_values(monkeypatch):
     assert "res-pass" not in repr(s2)
     assert "norm-pass" not in repr(s2)
 
+
+@pytest.mark.parametrize(
+    "field",
+    ["osint_max_concurrent_scans", "osint_engine_timeout_seconds", "osint_max_output_bytes"],
+)
+@pytest.mark.parametrize("value", [0, -1])
+def test_osint_limits_must_be_positive(field, value):
+    with pytest.raises(ValueError):
+        Settings(**{field: value})

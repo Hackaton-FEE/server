@@ -124,3 +124,40 @@ def test_unconfigured_proxy_does_not_inherit_host_proxy(monkeypatch):
     )
 
     assert run.stdout.strip() == "False"
+
+
+def test_drains_large_stdout_and_stderr_without_deadlock():
+    run = run_tool(
+        [
+            _PY,
+            "-c",
+            "import os; [(os.write(1,b'x'*65536),os.write(2,b'y'*65536)) for _ in range(32)]",
+        ],
+        timeout=5,
+        max_output_bytes=1000,
+    )
+    assert run.returncode == 0
+    assert run.stdout == "x" * 1000
+    assert len(run.stderr) == 4096
+    assert run.truncated
+
+
+def test_timeout_kills_descendants(tmp_path):
+    import time
+
+    marker = tmp_path / "descendant-survived"
+    child = f"import time,pathlib; time.sleep(1); pathlib.Path({str(marker)!r}).touch()"
+    parent = (
+        f"import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{child!r}]); "
+        "time.sleep(5)"
+    )
+    run = run_tool([_PY, "-c", parent], timeout=0.3, max_output_bytes=1000)
+    assert run.timed_out
+    time.sleep(1.1)
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize("timeout,cap", [(0, 100), (1, 0), (-1, 100)])
+def test_invalid_limits_fail_before_launch(timeout, cap):
+    with pytest.raises(ToolExecutionError, match="límites"):
+        run_tool([_PY, "-c", "pass"], timeout=timeout, max_output_bytes=cap)

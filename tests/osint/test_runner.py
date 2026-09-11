@@ -260,3 +260,71 @@ def test_no_pivot_candidates_means_no_second_phase(client, settings, monkeypatch
     )
 
     assert calls == [("alias_de_prueba",)]  # una sola llamada: sin Fase 2
+
+
+def test_deleted_scan_stops_before_next_engine(client, settings, monkeypatch):
+    scan_id = _make_scan(settings)
+    calls = []
+
+    class DeleteEngine:
+        name = "blackbird"
+
+        def run(self, request):
+            calls.append(self.name)
+            with session_scope() as session:
+                repository.delete_scan(session, repository.get_scan(session, scan_id))
+            return EngineResult(self.name, ENGINE_OK, ())
+
+    class NextEngine:
+        name = "holehe"
+
+        def run(self, request):
+            calls.append(self.name)
+            return EngineResult(self.name, ENGINE_OK, ())
+
+    monkeypatch.setattr(runner, "build_engines", lambda _: [DeleteEngine(), NextEngine()])
+    runner.run_scan(
+        scan_id=scan_id, engine_request=EngineRequest(usernames=("alias",)), settings=settings
+    )
+    assert calls == ["blackbird"]
+
+
+def test_concurrent_scan_limit_and_slot_release(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event, Lock
+
+    import pytest
+
+    settings = Settings(environment="test", osint_max_concurrent_scans=1)
+    started = Event()
+    release = Event()
+    lock = Lock()
+    active = peak = 0
+
+    def fake_scan(**kwargs):
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        started.set()
+        assert release.wait(timeout=5)
+        with lock:
+            active -= 1
+        if kwargs["scan_id"] == "first":
+            raise RuntimeError("simulated failure")
+
+    monkeypatch.setattr(runner, "_run_scan", fake_scan)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(
+            runner.run_scan, scan_id="first", engine_request=EngineRequest(()), settings=settings
+        )
+        assert started.wait(timeout=5)
+        second = pool.submit(
+            runner.run_scan, scan_id="second", engine_request=EngineRequest(()), settings=settings
+        )
+        release.set()
+        with pytest.raises(RuntimeError):
+            first.result(timeout=5)
+        second.result(timeout=5)
+    assert peak == 1
+    assert runner._active_scans == 0

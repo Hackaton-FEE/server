@@ -56,9 +56,9 @@ class Settings(BaseSettings):
     # `real`: subprocesos a las herramientas vendorizadas (fase posterior).
     osint_engine_mode: Literal["fake", "real"] = "fake"
     osint_retention_days: int = 7
-    osint_max_concurrent_scans: int = 2
-    osint_engine_timeout_seconds: int = 120
-    osint_max_output_bytes: int = 5_000_000
+    osint_max_concurrent_scans: int = Field(default=2, ge=1)
+    osint_engine_timeout_seconds: int = Field(default=120, ge=1)
+    osint_max_output_bytes: int = Field(default=5_000_000, ge=1)
     osint_proxy_url: SecretStr = SecretStr("")
     osint_residential_proxy_url: SecretStr = SecretStr("")
     osint_normal_proxy_url: SecretStr = SecretStr("")

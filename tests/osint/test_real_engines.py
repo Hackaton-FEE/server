@@ -34,6 +34,8 @@ def _install_stub_tool(root: Path, tool: str, *executables: str) -> None:
         path.write_text("#!/bin/sh\n")
     if tool == "blackbird":
         (root / tool / "blackbird.py").write_text("# stub\n")
+        (root / tool / "src").mkdir()
+        (root / tool / "data").mkdir()
 
 
 def test_missing_tool_raises_tool_execution_error(tmp_path):
@@ -264,3 +266,114 @@ def test_ignorant_engine_errors_when_the_tool_did_not_run(tmp_path, monkeypatch)
 
     assert result.status == "error"
     assert result.error_category == "no-output"
+
+
+def test_concurrent_blackbird_reports_are_isolated(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    _install_stub_tool(tmp_path, "blackbird", "python")
+    settings = _real_settings(str(tmp_path))
+    barrier = Barrier(2)
+    workdirs = []
+    fixture = (FIXTURES / "blackbird_testuser12345.json").read_text()
+    # Ni se copia ni se borra un informe anterior del árbol vendorizado.
+    old = tmp_path / "blackbird" / "src" / "results"
+    old.mkdir()
+    (old / "previous_blackbird.json").write_text("private previous report")
+
+    def fake_run(argv, *, cwd, **kwargs):
+        work = Path(cwd)
+        workdirs.append(work)
+        assert Path(argv[1]).parent == work
+        assert not (work / "src" / "results").exists()
+        report = work / "src" / "results" / "same_alias_blackbird.json"
+        report.parent.mkdir()
+        report.write_text(fixture)
+        barrier.wait(timeout=5)
+        return ToolRun(0, "", "", False, False)
+
+    monkeypatch.setattr(real, "run_tool", fake_run)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(
+            pool.map(
+                lambda _: real.BlackbirdEngine(settings).run(
+                    EngineRequest(usernames=("same_alias",))
+                ),
+                range(2),
+            )
+        )
+    assert all(result.findings and result.status == "ok" for result in results)
+    assert workdirs[0] != workdirs[1]
+    assert all(not work.exists() for work in workdirs)
+    assert (old / "previous_blackbird.json").exists()
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        ToolRun(1, "", "", False, False),
+        ToolRun(-1, "", "", True, True),
+        ToolRun(0, "", "", False, True),
+    ],
+)
+@pytest.mark.parametrize(
+    "tool,engine,fixture,filename,engine_input",
+    [
+        (
+            "blackbird",
+            real.BlackbirdEngine,
+            "blackbird_testuser12345.json",
+            "x_blackbird.json",
+            EngineRequest(usernames=("alias",)),
+        ),
+        (
+            "maigret",
+            real.MaigretEngine,
+            "maigret_torvalds_simple.json",
+            "report_x_simple.json",
+            EngineRequest(usernames=("alias",)),
+        ),
+        (
+            "holehe",
+            real.HoleheEngine,
+            "holehe_confirmed.csv",
+            "holehe_x_results.csv",
+            EngineRequest(usernames=(), email="persona@example.com"),
+        ),
+    ],
+)
+def test_partial_reports_never_claim_complete_coverage(
+    tmp_path, monkeypatch, outcome, tool, engine, fixture, filename, engine_input
+):
+    _install_stub_tool(tmp_path, tool, "python" if tool == "blackbird" else tool)
+
+    def fake_run(argv, *, cwd, **kwargs):
+        (Path(cwd) / filename).write_text((FIXTURES / fixture).read_text())
+        return outcome
+
+    monkeypatch.setattr(real, "run_tool", fake_run)
+    result = engine(_real_settings(str(tmp_path))).run(engine_input)
+    assert result.findings
+    assert result.status == "degraded"
+
+
+def test_maigret_custom_database_is_absolute(tmp_path, monkeypatch):
+    _install_stub_tool(tmp_path, "maigret", "maigret")
+    database = tmp_path / "maigret" / "data.json"
+    database.write_text("{}")
+    monkeypatch.chdir(tmp_path)
+
+    def fake_run(argv, **kwargs):
+        assert argv[argv.index("--db") + 1] == str(database)
+        return ToolRun(0, "", "", False, False)
+
+    monkeypatch.setattr(real, "run_tool", fake_run)
+    real.MaigretEngine(_real_settings(".")).run(EngineRequest(usernames=("alias",)))
+
+
+def test_oversized_report_is_rejected(tmp_path):
+    report = tmp_path / "report.json"
+    report.write_bytes(b"x" * 101)
+    with pytest.raises(ToolExecutionError, match="demasiado grande"):
+        real._read_report(report, 100)

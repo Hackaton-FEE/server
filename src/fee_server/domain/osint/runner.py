@@ -15,6 +15,7 @@ en un contador que se pueda subir sin querer.
 """
 
 import logging
+from threading import Condition
 
 from fee_server.core.config import Settings
 from fee_server.db.models import OsintScan
@@ -46,7 +47,26 @@ _PHASE2_PROGRESS_BUDGET = 25
 _USERNAME_ENGINE_NAMES = frozenset({"blackbird", "maigret"})
 
 
+# La API desplegada usa un único worker. El cupo limita las tareas de fondo
+# dentro del proceso; QUEUED espera sin lanzar herramientas ni gastar proxy.
+_SCAN_SLOTS = Condition()
+_active_scans = 0
+
+
 def run_scan(*, scan_id: str, engine_request: EngineRequest, settings: Settings) -> None:
+    global _active_scans
+    with _SCAN_SLOTS:
+        _SCAN_SLOTS.wait_for(lambda: _active_scans < settings.osint_max_concurrent_scans)
+        _active_scans += 1
+    try:
+        _run_scan(scan_id=scan_id, engine_request=engine_request, settings=settings)
+    finally:
+        with _SCAN_SLOTS:
+            _active_scans -= 1
+            _SCAN_SLOTS.notify_all()
+
+
+def _run_scan(*, scan_id: str, engine_request: EngineRequest, settings: Settings) -> None:
     """Ejecuta la cascada (con pivoteo) y persiste el resultado. No propaga excepciones."""
     try:
         engines = build_engines(settings)
@@ -63,6 +83,8 @@ def run_scan(*, scan_id: str, engine_request: EngineRequest, settings: Settings)
 
     step1 = _PHASE1_PROGRESS_BUDGET // max(len(engines), 1)
     for index, engine in enumerate(engines, start=1):
+        if not _is_active(scan_id):
+            return
         all_findings.extend(_run_engine(scan_id, engine, engine_request, engine_state))
         progress = min(_PHASE1_PROGRESS_BUDGET, index * step1)
         _checkpoint(scan_id, progress=progress, engines=engine_state)
@@ -73,6 +95,8 @@ def run_scan(*, scan_id: str, engine_request: EngineRequest, settings: Settings)
         pivot_engines = [e for e in engines if e.name in _USERNAME_ENGINE_NAMES]
         step2 = _PHASE2_PROGRESS_BUDGET // max(len(pivot_engines), 1)
         for index, engine in enumerate(pivot_engines, start=1):
+            if not _is_active(scan_id):
+                return
             all_findings.extend(_run_engine(scan_id, engine, pivot_request, engine_state))
             progress = _PHASE1_PROGRESS_BUDGET + min(_PHASE2_PROGRESS_BUDGET, index * step2)
             _checkpoint(scan_id, progress=progress, engines=engine_state)
@@ -182,6 +206,12 @@ def _mark_running(scan_id: str) -> bool:
             return False
         scan.status = "RUNNING"
         return True
+
+
+def _is_active(scan_id: str) -> bool:
+    with session_scope() as session:
+        scan = repository.get_scan(session, scan_id)
+        return scan is not None and scan.status == "RUNNING"
 
 
 def _checkpoint(scan_id: str, *, progress: int, engines: dict) -> None:

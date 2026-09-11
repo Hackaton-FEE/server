@@ -30,7 +30,7 @@ from fee_server.domain.osint.engines.parsers import (
     parse_ignorant_output,
     parse_maigret_simple_json,
 )
-from fee_server.domain.osint.engines.process import ToolExecutionError, run_tool
+from fee_server.domain.osint.engines.process import ToolExecutionError, ToolRun, run_tool
 from fee_server.domain.osint.findings import RATE_LIMITED, Finding
 
 # `osint_engine_timeout_seconds` es el presupuesto de reloj de pared por motor.
@@ -49,8 +49,17 @@ def _newest(directory: str, pattern: str) -> Path | None:
     return matches[-1] if matches else None
 
 
-def _rmtree(path: Path) -> None:
-    shutil.rmtree(path, ignore_errors=True)
+def _incomplete(outcome: ToolRun) -> bool:
+    return outcome.timed_out or outcome.truncated or outcome.returncode != 0
+
+
+def _read_report(path: Path, max_bytes: int) -> str:
+    # Los informes no pasan por stdout: también necesitan una lectura acotada.
+    with path.open("rb") as report:
+        content = report.read(max_bytes + 1)
+    if len(content) > max_bytes:
+        raise ToolExecutionError("informe OSINT demasiado grande")
+    return content.decode("utf-8", "replace")
 
 
 @contextlib.contextmanager
@@ -82,10 +91,6 @@ class _RealEngine:
     @property
     def _normal_proxy(self) -> str:
         return self._settings.effective_osint_normal_proxy
-
-    @property
-    def _proxy(self) -> str:
-        return self._residential_proxy
 
     def _require(self, path: Path) -> Path:
         if not path.exists():
@@ -126,46 +131,52 @@ class BlackbirdEngine(_RealEngine):
         root = self._require(self._vendor / "blackbird").absolute()
         python = self._require(root / ".venv" / "bin" / "python")
         script = self._require(root / "blackbird.py")
-        # Blackbird resuelve `data/` y `blackbird.log` contra el cwd y escribe el
-        # informe en `<repo>/results/`; por eso se ejecuta con cwd en su propio
-        # directorio. Con escaneos concurrentes del mismo alias el mismo día,
-        # blackbird sobrescribe su informe (limitación conocida, aceptable con
-        # `osint_max_concurrent_scans` bajo).
-        results_dir = root / "results"
-        _rmtree(results_dir)
-
         findings: list[Finding] = []
         degraded = False
         for raw_username in request.usernames:
             username = self._safe_username(raw_username)
-            argv = [
-                str(python),
-                str(script),
-                "--username",
-                username,
-                "--json",
-                "--no-update",
-                "--timeout",
-                _PER_REQUEST_TIMEOUT,
-                "--max-concurrent-requests",
-                _BLACKBIRD_CONCURRENCY,
-            ]
-            if self._normal_proxy:
-                argv += ["--proxy", self._normal_proxy]
+            # Blackbird deriva rutas tanto del cwd como de __file__. Copiar
+            # solo código/datos (~600 KB), nunca el venv, aísla informes y logs
+            # incluso con el mismo alias en dos escaneos concurrentes.
+            with _workdir() as work:
+                shutil.copy2(script, Path(work) / script.name)
+                for directory in ("src", "data"):
+                    source = self._require(root / directory)
+                    shutil.copytree(
+                        source,
+                        Path(work) / directory,
+                        ignore=shutil.ignore_patterns("results", "logs", "__pycache__"),
+                    )
+                argv = [
+                    str(python),
+                    str(Path(work) / script.name),
+                    "--username",
+                    username,
+                    "--json",
+                    "--no-update",
+                    "--timeout",
+                    _PER_REQUEST_TIMEOUT,
+                    "--max-concurrent-requests",
+                    _BLACKBIRD_CONCURRENCY,
+                ]
+                if self._normal_proxy:
+                    argv += ["--proxy", self._normal_proxy]
 
-            run_tool(
-                argv,
-                timeout=self._timeout,
-                max_output_bytes=self._max_bytes,
-                proxy_url=self._normal_proxy,
-                cwd=str(root),
-            )
-            report = _newest(str(results_dir), "*_blackbird.json")
-            if report is None:
-                degraded = True
-                continue
-            findings += parse_blackbird_json(report.read_text("utf-8"), username=username)
-            _rmtree(report.parent)
+                outcome = run_tool(
+                    argv,
+                    timeout=self._timeout,
+                    max_output_bytes=self._max_bytes,
+                    proxy_url=self._normal_proxy,
+                    cwd=work,
+                )
+                degraded |= _incomplete(outcome)
+                report = _newest(work, "*_blackbird.json")
+                if report is None:
+                    degraded = True
+                    continue
+                findings += parse_blackbird_json(
+                    _read_report(report, self._max_bytes), username=username
+                )
 
         return EngineResult(self.name, ENGINE_DEGRADED if degraded else ENGINE_OK, tuple(findings))
 
@@ -178,7 +189,7 @@ class MaigretEngine(_RealEngine):
             return EngineResult(self.name, ENGINE_SKIPPED)
 
         binary = self._require(self._vendor / "maigret" / ".venv" / "bin" / "maigret")
-        database = self._vendor / "maigret" / "data.json"
+        database = (self._vendor / "maigret" / "data.json").absolute()
 
         findings: list[Finding] = []
         degraded = False
@@ -206,18 +217,21 @@ class MaigretEngine(_RealEngine):
                 # contra sí mismo. El entorno cubre también sus activadores y
                 # curl_cffi; no pasar --proxy evita ese doble salto.
 
-                run_tool(
+                outcome = run_tool(
                     argv,
                     timeout=self._timeout * _MAIGRET_BUDGET_FACTOR,
                     max_output_bytes=self._max_bytes,
                     proxy_url=self._normal_proxy,
                     cwd=work,
                 )
+                degraded |= _incomplete(outcome)
                 report = _newest(work, "report_*_simple.json")
                 if report is None:
                     degraded = True
                     continue
-                findings += parse_maigret_simple_json(report.read_text("utf-8"), username=username)
+                findings += parse_maigret_simple_json(
+                    _read_report(report, self._max_bytes), username=username
+                )
 
         return EngineResult(self.name, ENGINE_DEGRADED if degraded else ENGINE_OK, tuple(findings))
 
@@ -242,7 +256,7 @@ class HoleheEngine(_RealEngine):
                 "-T",
                 _PER_REQUEST_TIMEOUT,
             ]
-            run_tool(
+            outcome = run_tool(
                 argv,
                 timeout=self._timeout,
                 max_output_bytes=self._max_bytes,
@@ -252,10 +266,10 @@ class HoleheEngine(_RealEngine):
             report = _newest(work, "holehe_*_results.csv")
             if report is None:
                 return EngineResult(self.name, ENGINE_ERROR, (), "no-output")
-            findings = tuple(parse_holehe_csv(report.read_text("utf-8")))
+            findings = tuple(parse_holehe_csv(_read_report(report, self._max_bytes)))
 
         # Sin proxy residencial, holehe topa rate-limit en casi todos los sitios.
-        degraded = any(f.status == RATE_LIMITED for f in findings)
+        degraded = _incomplete(outcome) or any(f.status == RATE_LIMITED for f in findings)
         return EngineResult(self.name, ENGINE_DEGRADED if degraded else ENGINE_OK, findings)
 
 
@@ -307,5 +321,5 @@ class IgnorantEngine(_RealEngine):
         if not findings and "websites checked" not in outcome.stdout:
             return EngineResult(self.name, ENGINE_ERROR, (), "no-output")
 
-        degraded = any(f.status == RATE_LIMITED for f in findings)
+        degraded = _incomplete(outcome) or any(f.status == RATE_LIMITED for f in findings)
         return EngineResult(self.name, ENGINE_DEGRADED if degraded else ENGINE_OK, findings)

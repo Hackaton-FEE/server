@@ -12,11 +12,10 @@ para evitar configuraciones erróneas.
 Para no agotar la cuota del proxy residencial:
 - **Holehe e Ignorant (account-recovery):** Usan el proxy residencial (`FEE_OSINT_RESIDENTIAL_PROXY_URL`
   o `FEE_OSINT_PROXY_URL`). Consultan endpoints de restablecimiento de contraseña en
-  servicios que bloquean activamente IPs de centros de datos. Su consumo es mínimo
-  (< 2 MB por escaneo).
+  servicios que bloquean activamente IPs de centros de datos. El consumo depende de las respuestas de cada servicio; no hay una cuota de MB garantizada por escaneo.
 - **Blackbird y Maigret (búsqueda de usernames):** Usan `FEE_OSINT_NORMAL_PROXY_URL`
   o salida directa (conexión normal del servidor) si dicha variable está vacía.
-  Consultan perfiles públicos abiertos, ahorrando más del 95% del tráfico residencial.
+  Consultan perfiles públicos abiertos y no consumen el proxy residencial cuando el proxy normal está vacío. El porcentaje de ahorro requiere medición del proveedor.
 
 Ejemplo ficticio: `http://USUARIO:CLAVE@gate.decodo.com:7000`. Codifica los caracteres
 especiales del usuario y contraseña como componentes URL. El puerto 7000 rota
@@ -72,3 +71,26 @@ incluyendo respuesta 407. No realizan escaneos reales de personas. Las pruebas
 de conectividad a Decodo acreditan transporte y rotación, no resultados de redes
 sociales. Registrar por separado el resultado del despliegue y sus imágenes en
 `DEPLOYMENT.json`, sin secretos ni identificadores de personas.
+
+## Estabilidad y límites de ejecución
+
+- `FEE_OSINT_MAX_CONCURRENT_SCANS` (2 por defecto) limita escaneos activos por
+  proceso de API. El despliegue actual usa un worker; varios workers multiplican
+  ese límite. Los demás escaneos esperan en `QUEUED`.
+- `FEE_OSINT_ENGINE_TIMEOUT_SECONDS` limita cada invocación por identificador;
+  Maigret tiene un factor de 3. Varios alias/pivotes suman sus presupuestos.
+  Al terminar se eliminan también los procesos hijos del grupo.
+- `FEE_OSINT_MAX_OUTPUT_BYTES` acota stdout en memoria y la lectura de informes.
+  Stderr conserva como máximo 4096 bytes. Estos límites **no son una cuota de
+  tráfico de red**; las herramientas pueden recibir más bytes por HTTP.
+- Blackbird ejecuta código/datos en un directorio temporal independiente por
+  alias, sin copiar informes previos ni compartir logs entre escaneos.
+- Un timeout, salida truncada o código de salida fallido no puede acreditar
+  cobertura completa aunque exista un informe parcial.
+- Borrar un escaneo detiene la cascada antes del siguiente motor. La invocación
+  ya iniciada termina bajo su timeout; no se promete cancelación inmediata.
+
+Las tareas siguen siendo de fondo en el proceso FastAPI, sin cola durable.
+Un reinicio forzado puede interrumpirlas: antes de desplegar, comprobar que no
+queden escaneos `RUNNING`/`QUEUED`. Las pruebas automáticas usan red local/dobles,
+no miden el consumo real ni garantizan que un servicio externo acepte el proxy.
