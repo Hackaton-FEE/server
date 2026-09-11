@@ -49,6 +49,18 @@ class InvalidSessionError(AuthError):
     detail = "La sesión no es válida. Inicia sesión de nuevo."
 
 
+class TestingAccessDisabledError(AuthError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "testing-access-disabled"
+    detail = "El acceso de pruebas está deshabilitado en este servidor."
+
+
+class PasskeyDisabledError(AuthError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "passkey-disabled"
+    detail = "La autenticación por passkey está deshabilitada durante las pruebas."
+
+
 class VerificationError(ProblemError):
     """Base de los errores de verificación de correo."""
 

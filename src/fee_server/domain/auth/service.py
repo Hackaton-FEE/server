@@ -1,4 +1,4 @@
-"""Casos de uso de autenticación por passkey.
+"""Autenticación por passkey y acceso temporal de pruebas.
 
 Flujo sin usuario ni contraseña:
   1. registro:  options -> el SO crea una passkey -> verify -> se crea la cuenta
@@ -6,6 +6,7 @@ Flujo sin usuario ni contraseña:
 
 La cuenta se identifica por un `handle` aleatorio; el login localiza al usuario
 por el `credential_id` que devuelve el autenticador (credencial descubrible).
+El modo `testing` emite una sesión de una cuenta aleatoria nueva sin credencial.
 """
 
 import secrets
@@ -19,6 +20,8 @@ from fee_server.core.problem import (
     InvalidChallengeError,
     InvalidCredentialError,
     InvalidSessionError,
+    PasskeyDisabledError,
+    TestingAccessDisabledError,
     UnknownCredentialError,
 )
 from fee_server.core.security import challenge as challenge_mod
@@ -48,6 +51,7 @@ class AuthService:
         self._settings = settings
 
     def start_registration(self, label: str) -> ChallengeOptionsResponse:
+        self._require_passkey()
         handle = secrets.token_bytes(HANDLE_BYTES)
         clean_label = _clean_label(label)
         challenge, token = challenge_mod.issue_challenge(
@@ -62,6 +66,7 @@ class AuthService:
         return ChallengeOptionsResponse(challenge_token=token, public_key=public_key)
 
     def finish_registration(self, challenge_token: str, credential: dict) -> SessionResponse:
+        self._require_passkey()
         challenge, data = self._read_challenge(challenge_token, "register")
 
         raw_id = _credential_raw_id(credential)
@@ -82,6 +87,7 @@ class AuthService:
         return self._issue_session(user)
 
     def start_authentication(self) -> ChallengeOptionsResponse:
+        self._require_passkey()
         challenge, token = challenge_mod.issue_challenge(
             self._settings.jwt_secret,
             "authenticate",
@@ -91,6 +97,7 @@ class AuthService:
         return ChallengeOptionsResponse(challenge_token=token, public_key=public_key)
 
     def finish_authentication(self, challenge_token: str, credential: dict) -> SessionResponse:
+        self._require_passkey()
         challenge, _ = self._read_challenge(challenge_token, "authenticate")
 
         stored = repository.get_credential(self._session, _credential_raw_id(credential))
@@ -114,6 +121,14 @@ class AuthService:
         stored.user.last_active_at = utcnow()
         return self._issue_session(stored.user)
 
+    def start_testing_session(self) -> SessionResponse:
+        if self._settings.auth_mode != "testing":
+            raise TestingAccessDisabledError()
+        user = repository.create_testing_user(
+            self._session, handle=secrets.token_bytes(HANDLE_BYTES)
+        )
+        return self._issue_session(user)
+
     def refresh(self, refresh_token: str) -> SessionResponse:
         row = repository.get_refresh_token(self._session, tokens.hash_refresh_token(refresh_token))
         if row is None:
@@ -129,7 +144,10 @@ class AuthService:
 
         row.revoked_at = utcnow()
         user = repository.get_user(self._session, row.user_id)
-        if user is None:
+        if user is None or (
+            self._settings.auth_mode == "passkey"
+            and repository.count_credentials(self._session, user.id) == 0
+        ):
             raise InvalidSessionError()
         return self._issue_session(user)
 
@@ -145,6 +163,10 @@ class AuthService:
             created_at=as_utc(user.created_at),
             credentials_count=repository.count_credentials(self._session, user.id),
         )
+
+    def _require_passkey(self) -> None:
+        if self._settings.auth_mode != "passkey":
+            raise PasskeyDisabledError()
 
     def _read_challenge(self, token: str, purpose: str) -> tuple[bytes, dict]:
         try:

@@ -1,6 +1,7 @@
 # Standalone file: do not layer over the development compose.yaml.
 x-api-environment: &api-environment
   FEE_ENVIRONMENT: production
+  FEE_AUTH_MODE: ${FEE_AUTH_MODE:-passkey}
   FEE_DATABASE_URL: postgresql+psycopg://fee:${POSTGRES_PASSWORD:?Generate .env.production first}@db:5432/fee
   FEE_JWT_SECRET: ${FEE_JWT_SECRET:?Generate .env.production first}
   FEE_WEBAUTHN_RP_ID: ${FEE_WEBAUTHN_RP_ID:-backosisnt.ici-labs.com}

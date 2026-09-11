@@ -26,6 +26,10 @@ class AuthenticationOptionsRequest(_StrictRequest):
     pass
 
 
+class TestingSessionRequest(_StrictRequest):
+    """No acepta datos para elegir, vincular ni recuperar cuentas existentes."""
+
+
 class AuthenticationVerifyRequest(_StrictRequest):
     challenge_token: str
     credential: CredentialJSON
